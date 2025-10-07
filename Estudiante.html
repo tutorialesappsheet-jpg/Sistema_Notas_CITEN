@@ -9,9 +9,6 @@
   
   <?!= include('Stylesheet'); ?>
 </head>
-
-
-
 <body>
 
   <!-- Header Superior -->
@@ -52,12 +49,14 @@
         </div>
       </div>
       
+      <!-- MENÚ DE NAVEGACIÓN CORREGIDO (UNA SOLA LISTA) -->
       <ul class="sidebar-nav">
         <li><a href="#" class="nav-link active" data-target="resumen"><i class="fas fa-chart-line"></i> Resumen General</a></li>
         <li><a href="#" class="nav-link" data-target="areas"><i class="fas fa-book-open"></i> Por Área Curricular</a></li>
         <li><a href="#" class="nav-link" data-target="competencias"><i class="fas fa-tasks"></i> Por Competencias</a></li>
         <li><a href="#" class="nav-link" data-target="historico"><i class="fas fa-history"></i> Histórico</a></li>
         <li><a href="#" class="nav-link" data-target="calificaciones"><i class="fas fa-list-alt"></i> Todas las Notas</a></li>
+        <li><a href="#" class="nav-link" data-target="reporte-notas"><i class="fas fa-file-invoice"></i> Reporte de Notas</a></li>
       </ul>
 
       <div class="sidebar-footer">
@@ -85,8 +84,6 @@
         <div class="page-header">
           <h2><i class="fas fa-chart-line"></i> Resumen General de Rendimiento</h2>
         </div>
-
-        <!-- Tarjetas de Estadísticas -->
         <div class="row mb-4">
           <div class="col-md-3">
             <div class="stat-card stat-card-blue">
@@ -129,8 +126,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Gráficos -->
         <div class="row">
           <div class="col-md-8">
             <div class="card">
@@ -149,8 +144,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Últimas Calificaciones -->
         <div class="row mt-4">
           <div class="col-md-12">
             <div class="card">
@@ -160,18 +153,11 @@
                   <table class="table table-hover">
                     <thead>
                       <tr>
-                        <th>Fecha</th>
-                        <th>Área</th>
-                        <th>Competencia</th>
-                        <th>Calificación</th>
-                        <th>Nivel</th>
-                        <th>Retroalimentación</th>
+                        <th>Fecha</th><th>Área</th><th>Competencia</th><th>Calificación</th><th>Nivel</th><th>Retroalimentación</th>
                       </tr>
                     </thead>
                     <tbody id="ultimas-notas">
-                      <tr>
-                        <td colspan="6" class="text-center text-muted">Cargando...</td>
-                      </tr>
+                      <tr><td colspan="6" class="text-center text-muted">Cargando...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -186,10 +172,7 @@
         <div class="page-header">
           <h2><i class="fas fa-book-open"></i> Rendimiento por Área Curricular</h2>
         </div>
-
-        <div id="areas-container" class="row">
-          <!-- Se llenará dinámicamente -->
-        </div>
+        <div id="areas-container" class="row"></div>
       </section>
 
       <!-- Sección: Por Competencias -->
@@ -197,19 +180,13 @@
         <div class="page-header">
           <h2><i class="fas fa-tasks"></i> Detalle por Competencias</h2>
         </div>
-
         <div class="row mb-3">
           <div class="col-md-6">
             <label>Filtrar por Área:</label>
-            <select id="filtro-area-comp" class="form-control">
-              <option value="">Todas las áreas</option>
-            </select>
+            <select id="filtro-area-comp" class="form-control"><option value="">Todas las áreas</option></select>
           </div>
         </div>
-
-        <div id="competencias-container">
-          <!-- Se llenará dinámicamente -->
-        </div>
+        <div id="competencias-container"></div>
       </section>
 
       <!-- Sección: Histórico -->
@@ -217,14 +194,12 @@
         <div class="page-header">
           <h2><i class="fas fa-history"></i> Histórico de Progreso</h2>
         </div>
-
         <div class="card">
           <div class="card-body">
             <h5><i class="fas fa-chart-line"></i> Evolución del Rendimiento</h5>
             <div id="chart-evolucion" style="width: 100%; height: 400px;"></div>
           </div>
         </div>
-
         <div class="row mt-4">
           <div class="col-md-12">
             <div class="card">
@@ -234,17 +209,11 @@
                   <table class="table table-bordered">
                     <thead>
                       <tr>
-                        <th>Periodo</th>
-                        <th>Promedio</th>
-                        <th>Nivel</th>
-                        <th>Total Notas</th>
-                        <th>Tendencia</th>
+                        <th>Periodo</th><th>Promedio</th><th>Nivel</th><th>Total Notas</th><th>Tendencia</th>
                       </tr>
                     </thead>
                     <tbody id="tabla-periodos">
-                      <tr>
-                        <td colspan="5" class="text-center text-muted">Cargando...</td>
-                      </tr>
+                      <tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -259,47 +228,31 @@
         <div class="page-header">
           <h2><i class="fas fa-list-alt"></i> Registro Completo de Calificaciones</h2>
         </div>
-
         <div class="row mb-3">
           <div class="col-md-4">
             <label>Filtrar por Área:</label>
-            <select id="filtro-area" class="form-control">
-              <option value="">Todas las áreas</option>
-            </select>
+            <select id="filtro-area" class="form-control"><option value="">Todas las áreas</option></select>
           </div>
           <div class="col-md-4">
             <label>Filtrar por Periodo:</label>
-            <select id="filtro-periodo" class="form-control">
-              <option value="">Todos los periodos</option>
-            </select>
+            <select id="filtro-periodo" class="form-control"><option value="">Todos los periodos</option></select>
           </div>
           <div class="col-md-4">
             <label>&nbsp;</label>
-            <button class="btn btn-primary btn-block" onclick="aplicarFiltros()">
-              <i class="fas fa-filter"></i> Aplicar Filtros
-            </button>
+            <button class="btn btn-primary btn-block" onclick="aplicarFiltros()"><i class="fas fa-filter"></i> Aplicar Filtros</button>
           </div>
         </div>
-
         <div class="card">
           <div class="card-body">
             <div class="table-responsive">
               <table class="table table-striped table-hover">
                 <thead>
                   <tr>
-                    <th>Fecha</th>
-                    <th>Área</th>
-                    <th>Competencia</th>
-                    <th>Calificación</th>
-                    <th>Nota</th>
-                    <th>Periodo</th>
-                    <th>Retroalimentación</th>
+                    <th>Fecha</th><th>Área</th><th>Competencia</th><th>Calificación</th><th>Nota</th><th>Periodo</th><th>Retroalimentación</th>
                   </tr>
                 </thead>
                 <tbody id="tabla-calificaciones">
-                  <tr>
-                    <td colspan="7" class="text-center text-muted">Cargando...</td>
-                  </tr>
+                  <tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>
                 </tbody>
               </table>
             </div>
@@ -307,27 +260,29 @@
         </div>
       </section>
 
+      <!-- SECCIÓN REPORTE DE NOTAS (UBICACIÓN CORRECTA) -->
+      <section id="reporte-notas" class="content-section">
+        <div class="page-header">
+          <h2><i class="fas fa-file-invoice"></i> Reporte Detallado de Notas</h2>
+        </div>
+        <div class="card">
+          <div class="card-body" id="reporte-container">
+            <p class="text-center text-muted">Cargando reporte...</p>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 
-  <!-- Scripts -->
+  <!-- Scripts (UBICACIÓN Y ORDEN CORRECTOS) -->
   <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
   <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
+  <script>
+    const initialData = <?!= initialData ?>;
+  </script>
   <?!= include('JavaScript'); ?>
-
-</main>
-</div>
-
-<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
-
-<script>
-  // Aquí recibimos los datos del servidor (Code.gs) y los convertimos en un objeto JavaScript
-  const initialData = <?!= initialData ?>;
-</script>
-<?!= include('JavaScript'); ?>
-
-
 
 </body>
 </html>
+
