@@ -13,49 +13,132 @@ const SPREADSHEET_ID = '1QFt6BFYtc8V_EIXqYROKo-aiqlDiRiBCTtb6IcbFERw';
 
 const SHEETS = {
   CALIFICACIONES: 'BD_Calificaciones',
-  ESTUDIANTES: 'Estudiantes',
+  ESTUDIANTES: 'Usuarios',
   COMPETENCIAS: 'Competencias',
   CONFIG: 'Config'
 };
+
+/**
+ * Registra un array de calificaciones, incluyendo la información del docente,
+ * en la hoja de cálculo de una sola vez.
+ */
+function registrarCalificacionesEnLote(calificacionesArray) {
+  const usuarioActual = obtenerUsuarioPorEmail(Session.getActiveUser().getEmail());
+  
+  if (!usuarioActual || usuarioActual.rol !== 'Docente') {
+    return { success: false, mensaje: 'Acceso no autorizado' };
+  }
+  
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
+    
+    const filasParaAgregar = calificacionesArray.map(datos => {
+      const notaLiteral = convertirNotaALiteral(datos.calificacionNum); 
+      
+      // El array corresponde exactamente a las columnas A hasta O
+      return [
+        datos.idEstudiante,       // Columna A
+        datos.apellidos,          // Columna B
+        datos.nombres,            // Columna C
+        datos.correo,             // Columna D
+        datos.grado,              // Columna E
+        datos.seccion,            // Columna F
+        datos.area,               // Columna G
+        datos.competencia,        // Columna H
+        notaLiteral,              // Columna I
+        datos.calificacionNum,    // Columna J
+        datos.periodo,            // Columna K
+        new Date(datos.fecha),    // Columna L
+        datos.retroalimentacion || '', // Columna M
+        usuarioActual.correo,     // Columna N
+        usuarioActual.nombres     // Columna O
+      ];
+    });
+
+    if (filasParaAgregar.length === 0) {
+      return { success: false, mensaje: 'No se enviaron calificaciones para registrar.' };
+    }
+
+    const ultimaFila = sheet.getLastRow();
+    // Esta línea se ajusta automáticamente a las 15 columnas
+    sheet.getRange(ultimaFila + 1, 1, filasParaAgregar.length, filasParaAgregar[0].length)
+         .setValues(filasParaAgregar);
+         
+    return { success: true, mensaje: `${filasParaAgregar.length} calificaciones fueron registradas exitosamente.` };
+
+  } catch (error) {
+    Logger.log('ERROR en registrarCalificacionesEnLote: ' + error.toString());
+    return { success: false, mensaje: 'Error al registrar en lote: ' + error.toString() };
+  }
+}
 
 // ============================================
 // FUNCIÓN PRINCIPAL - WEB APP
 // ============================================
 
+// Archivo: Code.gs
+
+// Archivo: Code.gs
+
+// Archivo: Code.gs
+
 function doGet(e) {
   try {
     const userEmail = Session.getActiveUser().getEmail();
-    
+
+    // 1. Si no hay un usuario logueado, mostrar la página de Login.
     if (!userEmail) {
-      return crearPaginaError('No se pudo identificar tu cuenta de Google.');
+      Logger.log('Acceso sin cuenta de Google. Mostrando página de Login.');
+      return HtmlService.createTemplateFromFile('Login').evaluate()
+        .setTitle('Iniciar Sesión - CITEN');
     }
-    
+
     Logger.log('Usuario accediendo: ' + userEmail);
-    
-    const usuario = obtenerUsuarioPorEmail(userEmail);
-    
+    const usuario = obtenerUsuarioPorEmail(userEmail); // Esta función la modificaremos a continuación
+
+    // 2. Si el usuario no está en la base de datos, mostrar Login.
     if (!usuario) {
-      return crearPaginaUsuarioNoRegistrado(userEmail);
+      Logger.log('Usuario NO REGISTRADO. Mostrando página de Login.');
+      return HtmlService.createTemplateFromFile('Login').evaluate()
+        .setTitle('Iniciar Sesión - CITEN');
     }
-    
-    Logger.log('Usuario encontrado: ' + usuario.nombres + ' ' + usuario.apellidos);
-    
-    // CAMBIO CRÍTICO: Pasar datos directamente en el template
-    const template = HtmlService.createTemplateFromFile('Estudiante');
-    template.usuario = usuario;
-    template.email = userEmail;
-    
-    return template.evaluate()
-      .setTitle('Sistema de Notas - CITEN')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+    // 3. ENRUTADOR DE ROLES: Decide qué página mostrar.
+    if (usuario.rol === 'Docente') {
+      // --- Si es DOCENTE, carga el panel de administración ---
+      Logger.log('Acceso de DOCENTE: ' + userEmail);
+      const template = HtmlService.createTemplateFromFile('Maestro'); // Crearemos este archivo
+      template.usuario = usuario;
+      return template.evaluate()
+        .setTitle('Panel del Docente - CITEN')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+
+    } else if (usuario.rol === 'Estudiante') {
+      // --- Si es ESTUDIANTE, carga el portal de notas ---
+      Logger.log('Acceso de ESTUDIANTE: ' + userEmail);
+      const datosCompletos = obtenerDatosUsuarioActual();
+      if (datosCompletos.error) {
+        return crearPaginaError('Error al obtener los datos del estudiante: ' + datosCompletos.error);
+      }
+      const template = HtmlService.createTemplateFromFile('Estudiante');
+      template.usuario = datosCompletos.usuario;
+      template.initialData = JSON.stringify(datosCompletos);
+      return template.evaluate()
+        .setTitle('Sistema de Notas - CITEN')
+        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+        .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    } else {
+       // Por si hay un rol no definido
+       return crearPaginaError('Tu rol no está definido en el sistema. Contacta al administrador.');
+    }
       
   } catch (error) {
-    Logger.log('Error en doGet: ' + error.toString());
-    return crearPaginaError('Error al cargar la aplicación: ' + error.toString());
+    Logger.log('Error CRÍTICO en doGet: ' + error.toString());
+    return crearPaginaError('Ha ocurrido un error inesperado al cargar la aplicación.');
   }
 }
-
 // ============================================
 // FUNCIONES DE PÁGINAS DE ERROR
 // ============================================
@@ -228,28 +311,30 @@ function obtenerDatosUsuarioActual() {
   }
 }
 
+// En Code.gs, modifica esta función
 function obtenerUsuarioPorEmail(email) {
   try {
+    // Asegúrate de que SHEETS.ESTUDIANTES ahora apunte a "Usuarios" en tus constantes globales
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-    const sheet = ss.getSheetByName(SHEETS.ESTUDIANTES);
+    const sheet = ss.getSheetByName(SHEETS.ESTUDIANTES); 
     
     if (!sheet) {
-      Logger.log('ERROR: Hoja no encontrada: ' + SHEETS.ESTUDIANTES);
+      Logger.log('ERROR: La hoja "Usuarios" no fue encontrada.');
       return null;
     }
     
     const data = sheet.getDataRange().getValues();
-    Logger.log('Total filas en Estudiantes: ' + data.length);
-    
     const emailBuscar = email.toString().toLowerCase().trim();
     
+    // El bucle empieza en 1 para saltarse la fila de encabezados
     for (let i = 1; i < data.length; i++) {
-      if (!data[i][0]) continue;
+      // Continuar solo si hay datos en la fila y en la columna de email
+      if (!data[i][0] || !data[i][3]) continue;
       
-      const emailFila = data[i][3] ? data[i][3].toString().toLowerCase().trim() : '';
+      const emailFila = data[i][3].toString().toLowerCase().trim();
       
       if (emailFila === emailBuscar) {
-        Logger.log('Usuario encontrado en fila ' + (i + 1));
+        // Si encuentra el correo, construye el objeto del usuario
         return {
           id: data[i][0],
           apellidos: data[i][1] || '',
@@ -257,12 +342,17 @@ function obtenerUsuarioPorEmail(email) {
           correo: data[i][3] || '',
           grado: data[i][4] || '',
           seccion: data[i][5] || '',
-          fotoUrl: data[i][6] || 'https://via.placeholder.com/150'
+          fotoUrl: data[i][6] || 'https://via.placeholder.com/150',
+          
+          // --- LÍNEA CLAVE ---
+          // Lee la columna H (índice 7 en el array) para obtener el rol.
+          // Si la celda está vacía, asigna "Estudiante" por defecto.
+          rol: data[i][7] || 'Estudiante' 
         };
       }
     }
     
-    Logger.log('Usuario no encontrado: ' + email);
+    // Si el bucle termina y no encontró el email, retorna null.
     return null;
     
   } catch (error) {
@@ -615,4 +705,54 @@ function mostrarAyuda() {
     '6. Usa "Debug Usuario Actual" para ver logs detallados',
     ui.ButtonSet.OK
   );
+}
+
+// Archivo: Code.gs (Agregar al final)
+
+/**
+* Función que expone datos seguros al frontend de la página de Login.
+* Devuelve el email del usuario actual y la URL de la aplicación.
+*/
+function getLoginInfo() {
+  const email = Session.getActiveUser().getEmail();
+  const url = ScriptApp.getService().getUrl();
+  return {
+    email: email,
+    appUrl: url
+  };
+}
+
+
+// Agrega estas funciones en Code.gs o donde prefieras
+
+/**
+ * Devuelve una lista de todos los estudiantes para un selector (dropdown).
+ */
+function obtenerListaDeEstudiantes() {
+  // OBTENER ROL PARA SEGURIDAD
+  const usuarioActual = obtenerUsuarioPorEmail(Session.getActiveUser().getEmail());
+  if (usuarioActual.rol !== 'Docente') {
+    return { error: 'Acceso no autorizado' };
+  }
+
+  const todosLosUsuarios = obtenerTodosEstudiantes(); // Esta función ya la tienes en Database.gs
+  // Filtrar solo para devolver estudiantes
+  const estudiantes = todosLosUsuarios.filter(u => u.rol === 'Estudiante'); 
+  return estudiantes;
+}
+
+/**
+ * Guarda una nueva calificación enviada desde el panel del docente.
+ */
+function guardarNuevaCalificacion(datosCalificacion) {
+  // OBTENER ROL PARA SEGURIDAD
+  const usuarioActual = obtenerUsuarioPorEmail(Session.getActiveUser().getEmail());
+  if (usuarioActual.rol !== 'Docente') {
+    return { success: false, mensaje: 'Acceso no autorizado' };
+  }
+  
+  // Aquí va la lógica para añadir la nueva fila en la hoja "BD_Calificaciones"
+  // Puedes reutilizar o adaptar la función 'registrarCalificacion' que ya tienes.
+  // Es importante validar que todos los datos (idEstudiante, area, etc.) vengan completos.
+  return registrarCalificacion(datosCalificacion); // Reutilizamos la función existente
 }
