@@ -1,19 +1,16 @@
 /**
  * SISTEMA DE REPORTES ACADÉMICOS - CITEN
- * Archivo: Code.gs
+ * Archivo: Code.gs - VERSIÓN FINAL CORREGIDA
  * Descripción: Funciones principales y configuración de la Web App
- * Versión: 1.0 - Compatible con Gmail normal
+ * Versión: 1.2 - Bug de datos null SOLUCIONADO
  */
 
 // ============================================
 // CONFIGURACIÓN GLOBAL
 // ============================================
 
-// ⚠️ IMPORTANTE: Reemplaza este ID con el ID de tu Google Sheets
-// El ID está en la URL: https://docs.google.com/spreadsheets/d/[ESTE_ES_EL_ID]/edit
 const SPREADSHEET_ID = '1QFt6BFYtc8V_EIXqYROKo-aiqlDiRiBCTtb6IcbFERw';
 
-// Nombres de las pestañas en tu hoja de cálculo
 const SHEETS = {
   CALIFICACIONES: 'BD_Calificaciones',
   ESTUDIANTES: 'Estudiantes',
@@ -25,109 +22,137 @@ const SHEETS = {
 // FUNCIÓN PRINCIPAL - WEB APP
 // ============================================
 
-/**
- * Función que se ejecuta cuando alguien accede a la Web App
- * Maneja la autenticación y carga la interfaz correspondiente
- */
 function doGet(e) {
-  // Obtener el email del usuario actual
-  const userEmail = Session.getActiveUser().getEmail();
-  
-  // Si no hay email (no autenticado), mostrar página de login
-  if (!userEmail) {
-    return HtmlService.createHtmlOutputFromFile('Login')
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    
+    if (!userEmail) {
+      return crearPaginaError('No se pudo identificar tu cuenta de Google.');
+    }
+    
+    Logger.log('Usuario accediendo: ' + userEmail);
+    
+    const usuario = obtenerUsuarioPorEmail(userEmail);
+    
+    if (!usuario) {
+      return crearPaginaUsuarioNoRegistrado(userEmail);
+    }
+    
+    Logger.log('Usuario encontrado: ' + usuario.nombres + ' ' + usuario.apellidos);
+    
+    // CAMBIO CRÍTICO: Pasar datos directamente en el template
+    const template = HtmlService.createTemplateFromFile('Estudiante');
+    template.usuario = usuario;
+    template.email = userEmail;
+    
+    return template.evaluate()
       .setTitle('Sistema de Notas - CITEN')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+      
+  } catch (error) {
+    Logger.log('Error en doGet: ' + error.toString());
+    return crearPaginaError('Error al cargar la aplicación: ' + error.toString());
   }
-  
-  // Verificar si el usuario existe en la base de datos
-  const usuario = obtenerUsuarioPorEmail(userEmail);
-  
-  if (!usuario) {
-    // Usuario no registrado
-    return HtmlService.createHtmlOutput(`
-      <html>
-        <head>
-          <base target="_top">
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              height: 100vh;
-              margin: 0;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            }
-            .container {
-              background: white;
-              padding: 40px;
-              border-radius: 10px;
-              box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-              text-align: center;
-              max-width: 500px;
-            }
-            h1 { color: #667eea; margin-bottom: 20px; }
-            p { color: #666; line-height: 1.6; }
-            .email { 
-              background: #f0f0f0; 
-              padding: 10px; 
-              border-radius: 5px; 
-              margin: 20px 0;
-              font-family: monospace;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>⚠️ Usuario No Registrado</h1>
-            <p>El correo electrónico:</p>
-            <div class="email">${userEmail}</div>
-            <p>No está registrado en el sistema.</p>
-            <p>Por favor, contacta al administrador para que agregue tu correo a la lista de estudiantes o docentes.</p>
-          </div>
-        </body>
-      </html>
-    `)
-    .setTitle('Usuario No Registrado')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-  }
-  
-  // Determinar el rol del usuario
-  const rol = determinarRol(usuario);
-  
-  // Cargar la interfaz correspondiente según el rol
-  let template;
-  
-  if (rol === 'estudiante') {
-    template = HtmlService.createTemplateFromFile('Estudiante');
-    template.usuario = usuario;
-    template.email = userEmail;
-  } else if (rol === 'docente') {
-    template = HtmlService.createTemplateFromFile('Docente');
-    template.usuario = usuario;
-    template.email = userEmail;
-  } else {
-    // Admin o sin rol definido, mostrar dashboard de estudiante por defecto
-    template = HtmlService.createTemplateFromFile('Estudiante');
-    template.usuario = usuario;
-    template.email = userEmail;
-  }
-  
-  return template.evaluate()
-    .setTitle('Sistema de Notas - CITEN')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+// ============================================
+// FUNCIONES DE PÁGINAS DE ERROR
+// ============================================
+
+function crearPaginaError(mensaje) {
+  return HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <base target="_top">
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+          background: white;
+          padding: 40px;
+          border-radius: 15px;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+          text-align: center;
+          max-width: 500px;
+        }
+        h1 { color: #ef4444; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+        a { color: #667eea; text-decoration: none; font-weight: 600; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>⚠️ Error</h1>
+        <p>${mensaje}</p>
+        <p><a href="${ScriptApp.getService().getUrl()}">Intentar nuevamente</a></p>
+      </div>
+    </body>
+    </html>
+  `).setTitle('Error - Sistema de Notas');
+}
+
+function crearPaginaUsuarioNoRegistrado(email) {
+  return HtmlService.createHtmlOutput(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <base target="_top">
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          height: 100vh;
+          margin: 0;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+          background: white;
+          padding: 40px;
+          border-radius: 15px;
+          box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+          text-align: center;
+          max-width: 500px;
+        }
+        h1 { color: #667eea; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+        .email { 
+          background: #f0f0f0; 
+          padding: 10px; 
+          border-radius: 5px; 
+          margin: 20px 0;
+          font-family: monospace;
+          word-break: break-all;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>⚠️ Usuario No Registrado</h1>
+        <p>El correo electrónico:</p>
+        <div class="email">${email}</div>
+        <p>No está registrado en el sistema.</p>
+        <p>Por favor, contacta al administrador para que agregue tu correo a la lista de estudiantes.</p>
+      </div>
+    </body>
+    </html>
+  `).setTitle('Usuario No Registrado');
 }
 
 // ============================================
 // FUNCIÓN PARA INCLUIR ARCHIVOS HTML
 // ============================================
 
-/**
- * Incluye contenido de otros archivos HTML (para CSS y JS)
- * Uso en HTML: <?!= include('Stylesheet'); ?>
- */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
@@ -136,163 +161,212 @@ function include(filename) {
 // FUNCIONES DE AUTENTICACIÓN Y USUARIOS
 // ============================================
 
-/**
- * Obtiene datos del usuario actual autenticado
- * @returns {Object} Objeto con datos del usuario y sus calificaciones
- */
 function obtenerDatosUsuarioActual() {
-  const userEmail = Session.getActiveUser().getEmail();
-  const usuario = obtenerUsuarioPorEmail(userEmail);
-  
-  if (!usuario) {
-    return { error: 'Usuario no encontrado' };
-  }
-  
-  const rol = determinarRol(usuario);
-  const calificaciones = obtenerCalificacionesPorEstudiante(userEmail);
-  const promedios = calcularPromedios(calificaciones);
-  const estadisticas = calcularEstadisticas(calificaciones);
-  
-  return {
-    usuario: usuario,
-    rol: rol,
-    calificaciones: calificaciones,
-    promedios: promedios,
-    estadisticas: estadisticas
-  };
-}
-
-/**
- * Busca un usuario por su email en la pestaña Estudiantes
- * @param {string} email - Email del usuario
- * @returns {Object|null} Datos del usuario o null si no existe
- */
-function obtenerUsuarioPorEmail(email) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEETS.ESTUDIANTES);
-  const data = sheet.getDataRange().getValues();
-  
-  // Saltar la primera fila (encabezados)
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][3] && data[i][3].toLowerCase() === email.toLowerCase()) {
+  try {
+    const userEmail = Session.getActiveUser().getEmail();
+    Logger.log('=== obtenerDatosUsuarioActual ===');
+    Logger.log('Email: ' + userEmail);
+    
+    const usuario = obtenerUsuarioPorEmail(userEmail);
+    
+    if (!usuario) {
+      Logger.log('ERROR: Usuario no encontrado');
+      // CAMBIO: Devolver objeto con estructura válida pero sin datos
       return {
-        id: data[i][0],
-        apellidos: data[i][1],
-        nombres: data[i][2],
-        correo: data[i][3],
-        grado: data[i][4],
-        seccion: data[i][5],
-        fotoUrl: data[i][6] || 'https://via.placeholder.com/150'
+        error: 'Usuario no encontrado',
+        usuario: null,
+        rol: 'estudiante',
+        calificaciones: [],
+        promedios: { general: 0, porArea: {}, porCompetencia: {} },
+        estadisticas: { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } }
       };
     }
+    
+    Logger.log('Usuario encontrado: ' + usuario.nombres);
+    
+    const calificaciones = obtenerCalificacionesPorEstudiante(userEmail);
+    Logger.log('Calificaciones: ' + calificaciones.length);
+    
+    const promedios = calcularPromedios(calificaciones);
+    const estadisticas = calcularEstadisticas(calificaciones);
+    
+    // CAMBIO: Asegurar que SIEMPRE devuelva un objeto válido
+    const resultado = {
+      usuario: {
+        id: usuario.id || '',
+        apellidos: usuario.apellidos || '',
+        nombres: usuario.nombres || '',
+        correo: usuario.correo || '',
+        grado: usuario.grado || '',
+        seccion: usuario.seccion || '',
+        fotoUrl: usuario.fotoUrl || 'https://via.placeholder.com/150'
+      },
+      rol: 'estudiante',
+      calificaciones: calificaciones || [],
+      promedios: promedios || { general: 0, porArea: {}, porCompetencia: {} },
+      estadisticas: estadisticas || { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } }
+    };
+    
+    Logger.log('Resultado preparado exitosamente');
+    Logger.log('=== FIN obtenerDatosUsuarioActual ===');
+    
+    return resultado;
+    
+  } catch (error) {
+    Logger.log('ERROR CRÍTICO en obtenerDatosUsuarioActual: ' + error.toString());
+    Logger.log('Stack: ' + error.stack);
+    
+    // CAMBIO: Incluso en error, devolver objeto válido
+    return {
+      error: error.toString(),
+      usuario: null,
+      rol: 'estudiante',
+      calificaciones: [],
+      promedios: { general: 0, porArea: {}, porCompetencia: {} },
+      estadisticas: { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } }
+    };
   }
-  
-  return null;
 }
 
-/**
- * Determina el rol del usuario (estudiante/docente/admin)
- * Por ahora todos son estudiantes, pero puedes agregar lógica
- */
+function obtenerUsuarioPorEmail(email) {
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.ESTUDIANTES);
+    
+    if (!sheet) {
+      Logger.log('ERROR: Hoja no encontrada: ' + SHEETS.ESTUDIANTES);
+      return null;
+    }
+    
+    const data = sheet.getDataRange().getValues();
+    Logger.log('Total filas en Estudiantes: ' + data.length);
+    
+    const emailBuscar = email.toString().toLowerCase().trim();
+    
+    for (let i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      
+      const emailFila = data[i][3] ? data[i][3].toString().toLowerCase().trim() : '';
+      
+      if (emailFila === emailBuscar) {
+        Logger.log('Usuario encontrado en fila ' + (i + 1));
+        return {
+          id: data[i][0],
+          apellidos: data[i][1] || '',
+          nombres: data[i][2] || '',
+          correo: data[i][3] || '',
+          grado: data[i][4] || '',
+          seccion: data[i][5] || '',
+          fotoUrl: data[i][6] || 'https://via.placeholder.com/150'
+        };
+      }
+    }
+    
+    Logger.log('Usuario no encontrado: ' + email);
+    return null;
+    
+  } catch (error) {
+    Logger.log('ERROR en obtenerUsuarioPorEmail: ' + error.toString());
+    return null;
+  }
+}
+
 function determinarRol(usuario) {
-  // Aquí puedes agregar lógica más compleja
-  // Por ejemplo, verificar si el email está en una lista de docentes
-  
-  // Por ahora, todos son estudiantes
   return 'estudiante';
-  
-  // Ejemplo de lógica futura:
-  // if (usuario.correo.includes('docente') || usuario.correo.includes('profesor')) {
-  //   return 'docente';
-  // }
-  // return 'estudiante';
 }
 
 // ============================================
 // FUNCIONES DE DATOS - CALIFICACIONES
 // ============================================
 
-/**
- * Obtiene todas las calificaciones de un estudiante
- * @param {string} email - Email del estudiante
- * @returns {Array} Array de objetos con las calificaciones
- */
 function obtenerCalificacionesPorEstudiante(email) {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
-  const data = sheet.getDataRange().getValues();
-  
-  const calificaciones = [];
-  
-  // Saltar encabezados (fila 0)
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
     
-    // Columna 3 es el correo (índice 3)
-    if (row[3] && row[3].toLowerCase() === email.toLowerCase()) {
-      calificaciones.push({
-        id: row[0],
-        apellidos: row[1],
-        nombres: row[2],
-        correo: row[3],
-        grado: row[4],
-        seccion: row[5],
-        area: row[6],
-        competencia: row[7],
-        calificacion: row[8],
-        calificacionNum: row[9],
-        periodo: row[10],
-        fecha: row[11],
-        retroalimentacion: row[12] || ''
-      });
+    if (!sheet) {
+      Logger.log('ERROR: Hoja no encontrada: ' + SHEETS.CALIFICACIONES);
+      return [];
     }
+    
+    const data = sheet.getDataRange().getValues();
+    const calificaciones = [];
+    const emailBuscar = email.toString().toLowerCase().trim();
+    
+    for (let i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      
+      const emailFila = data[i][3] ? data[i][3].toString().toLowerCase().trim() : '';
+      
+      if (emailFila === emailBuscar) {
+        calificaciones.push({
+          id: data[i][0] || '',
+          apellidos: data[i][1] || '',
+          nombres: data[i][2] || '',
+          correo: data[i][3] || '',
+          grado: data[i][4] || '',
+          seccion: data[i][5] || '',
+          area: data[i][6] || '',
+          competencia: data[i][7] || '',
+          calificacion: data[i][8] || '',
+          calificacionNum: data[i][9] || 0,
+          periodo: data[i][10] || '',
+          fecha: data[i][11] || new Date(),
+          retroalimentacion: data[i][12] || ''
+        });
+      }
+    }
+    
+    Logger.log('Calificaciones encontradas: ' + calificaciones.length);
+    return calificaciones;
+    
+  } catch (error) {
+    Logger.log('ERROR en obtenerCalificacionesPorEstudiante: ' + error.toString());
+    return [];
   }
-  
-  return calificaciones;
 }
 
-/**
- * Obtiene todas las calificaciones (para docentes/admin)
- * @returns {Array} Array con todas las calificaciones
- */
 function obtenerTodasCalificaciones() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
-  const data = sheet.getDataRange().getValues();
-  
-  const calificaciones = [];
-  
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    calificaciones.push({
-      id: row[0],
-      apellidos: row[1],
-      nombres: row[2],
-      correo: row[3],
-      grado: row[4],
-      seccion: row[5],
-      area: row[6],
-      competencia: row[7],
-      calificacion: row[8],
-      calificacionNum: row[9],
-      periodo: row[10],
-      fecha: row[11],
-      retroalimentacion: row[12] || ''
-    });
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
+    
+    if (!sheet) return [];
+    
+    const data = sheet.getDataRange().getValues();
+    const calificaciones = [];
+    
+    for (let i = 1; i < data.length; i++) {
+      if (!data[i][0]) continue;
+      
+      calificaciones.push({
+        id: data[i][0],
+        apellidos: data[i][1],
+        nombres: data[i][2],
+        correo: data[i][3],
+        grado: data[i][4],
+        seccion: data[i][5],
+        area: data[i][6],
+        competencia: data[i][7],
+        calificacion: data[i][8],
+        calificacionNum: data[i][9],
+        periodo: data[i][10],
+        fecha: data[i][11],
+        retroalimentacion: data[i][12] || ''
+      });
+    }
+    
+    return calificaciones;
+  } catch (error) {
+    Logger.log('ERROR en obtenerTodasCalificaciones: ' + error.toString());
+    return [];
   }
-  
-  return calificaciones;
 }
 
 // ============================================
 // FUNCIONES DE CÁLCULO
 // ============================================
 
-/**
- * Calcula promedios por área y competencia
- * @param {Array} calificaciones - Array de calificaciones
- * @returns {Object} Objeto con promedios calculados
- */
 function calcularPromedios(calificaciones) {
   const promedios = {
     general: 0,
@@ -300,23 +374,24 @@ function calcularPromedios(calificaciones) {
     porCompetencia: {}
   };
   
+  if (!calificaciones || calificaciones.length === 0) {
+    return promedios;
+  }
+  
   let sumaTotal = 0;
   let contadorTotal = 0;
   
-  // Agrupar por área
   calificaciones.forEach(cal => {
     const area = cal.area;
     const competencia = cal.competencia;
     const nota = parseFloat(cal.calificacionNum) || 0;
     
-    // Promedio por área
     if (!promedios.porArea[area]) {
       promedios.porArea[area] = { suma: 0, contador: 0, promedio: 0 };
     }
     promedios.porArea[area].suma += nota;
     promedios.porArea[area].contador += 1;
     
-    // Promedio por competencia
     const key = `${area} - ${competencia}`;
     if (!promedios.porCompetencia[key]) {
       promedios.porCompetencia[key] = { suma: 0, contador: 0, promedio: 0, area: area };
@@ -328,8 +403,7 @@ function calcularPromedios(calificaciones) {
     contadorTotal += 1;
   });
   
-  // Calcular promedios finales
-  promedios.general = contadorTotal > 0 ? (sumaTotal / contadorTotal).toFixed(2) : 0;
+  promedios.general = contadorTotal > 0 ? (sumaTotal / contadorTotal).toFixed(2) : '0.00';
   
   for (let area in promedios.porArea) {
     const data = promedios.porArea[area];
@@ -344,13 +418,16 @@ function calcularPromedios(calificaciones) {
   return promedios;
 }
 
-/**
- * Calcula estadísticas generales del estudiante
- * @param {Array} calificaciones - Array de calificaciones
- * @returns {Object} Estadísticas calculadas
- */
 function calcularEstadisticas(calificaciones) {
   let totalAD = 0, totalA = 0, totalB = 0, totalC = 0;
+  
+  if (!calificaciones) {
+    return {
+      total: 0,
+      porNivel: { AD: 0, A: 0, B: 0, C: 0 },
+      porcentajes: { AD: '0.0', A: '0.0', B: '0.0', C: '0.0' }
+    };
+  }
   
   calificaciones.forEach(cal => {
     switch(cal.calificacion) {
@@ -361,8 +438,10 @@ function calcularEstadisticas(calificaciones) {
     }
   });
   
+  const total = calificaciones.length;
+  
   return {
-    total: calificaciones.length,
+    total: total,
     porNivel: {
       AD: totalAD,
       A: totalA,
@@ -370,19 +449,14 @@ function calcularEstadisticas(calificaciones) {
       C: totalC
     },
     porcentajes: {
-      AD: calificaciones.length > 0 ? ((totalAD / calificaciones.length) * 100).toFixed(1) : 0,
-      A: calificaciones.length > 0 ? ((totalA / calificaciones.length) * 100).toFixed(1) : 0,
-      B: calificaciones.length > 0 ? ((totalB / calificaciones.length) * 100).toFixed(1) : 0,
-      C: calificaciones.length > 0 ? ((totalC / calificaciones.length) * 100).toFixed(1) : 0
+      AD: total > 0 ? ((totalAD / total) * 100).toFixed(1) : '0.0',
+      A: total > 0 ? ((totalA / total) * 100).toFixed(1) : '0.0',
+      B: total > 0 ? ((totalB / total) * 100).toFixed(1) : '0.0',
+      C: total > 0 ? ((totalC / total) * 100).toFixed(1) : '0.0'
     }
   };
 }
 
-/**
- * Convierte calificación numérica a literal (AD/A/B/C)
- * @param {number} nota - Calificación numérica (0-20)
- * @returns {string} Calificación literal
- */
 function convertirNotaALiteral(nota) {
   nota = parseFloat(nota);
   if (nota >= 18) return 'AD';
@@ -392,23 +466,16 @@ function convertirNotaALiteral(nota) {
 }
 
 // ============================================
-// FUNCIONES DE REGISTROS (PARA DOCENTES)
+// FUNCIONES DE REGISTROS
 // ============================================
 
-/**
- * Registra una nueva calificación
- * @param {Object} datos - Objeto con los datos de la calificación
- * @returns {Object} Resultado de la operación
- */
 function registrarCalificacion(datos) {
   try {
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
     const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
     
-    // Convertir nota numérica a literal si no viene
     const notaLiteral = datos.calificacion || convertirNotaALiteral(datos.calificacionNum);
     
-    // Agregar nueva fila
     sheet.appendRow([
       datos.idEstudiante,
       datos.apellidos,
@@ -427,6 +494,7 @@ function registrarCalificacion(datos) {
     
     return { success: true, mensaje: 'Calificación registrada correctamente' };
   } catch (error) {
+    Logger.log('ERROR en registrarCalificacion: ' + error.toString());
     return { success: false, mensaje: 'Error al registrar: ' + error.toString() };
   }
 }
@@ -435,60 +503,96 @@ function registrarCalificacion(datos) {
 // FUNCIONES AUXILIARES
 // ============================================
 
-/**
- * Obtiene la configuración del sistema
- * @returns {Object} Configuración actual
- */
 function obtenerConfiguracion() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEETS.CONFIG);
-  const data = sheet.getDataRange().getValues();
-  
-  const config = {};
-  
-  for (let i = 1; i < data.length; i++) {
-    config[data[i][0]] = data[i][1];
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.CONFIG);
+    
+    if (!sheet) return {};
+    
+    const data = sheet.getDataRange().getValues();
+    const config = {};
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][0]) {
+        config[data[i][0]] = data[i][1];
+      }
+    }
+    
+    return config;
+  } catch (error) {
+    Logger.log('ERROR en obtenerConfiguracion: ' + error.toString());
+    return {};
   }
-  
-  return config;
 }
 
-/**
- * Test de conexión a la hoja de cálculo
- * Ejecuta esto desde el editor para verificar que todo funciona
- */
+// ============================================
+// FUNCIÓN DE TEST
+// ============================================
+
 function testConexion() {
-  Logger.log('Probando conexión...');
+  Logger.log('==========================================');
+  Logger.log('INICIANDO TEST DE CONEXIÓN');
+  Logger.log('==========================================');
   
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  Logger.log('Hoja de cálculo conectada: ' + ss.getName());
-  
-  const estudiantes = ss.getSheetByName(SHEETS.ESTUDIANTES);
-  Logger.log('Total de estudiantes: ' + (estudiantes.getLastRow() - 1));
-  
-  const calificaciones = ss.getSheetByName(SHEETS.CALIFICACIONES);
-  Logger.log('Total de calificaciones: ' + (calificaciones.getLastRow() - 1));
-  
-  Logger.log('✅ Conexión exitosa');
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    Logger.log('✅ Hoja de cálculo conectada: ' + ss.getName());
+    
+    const estudiantesSheet = ss.getSheetByName(SHEETS.ESTUDIANTES);
+    if (estudiantesSheet) {
+      const totalEstudiantes = estudiantesSheet.getLastRow() - 1;
+      Logger.log('✅ Hoja Estudiantes: ' + totalEstudiantes + ' estudiantes');
+      
+      const data = estudiantesSheet.getRange(2, 4, Math.min(3, totalEstudiantes), 1).getValues();
+      Logger.log('   Primeros correos:');
+      data.forEach((row, index) => {
+        if (row[0]) Logger.log('   ' + (index + 1) + '. ' + row[0]);
+      });
+    }
+    
+    const calificacionesSheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
+    if (calificacionesSheet) {
+      const totalCalif = calificacionesSheet.getLastRow() - 1;
+      Logger.log('✅ Hoja Calificaciones: ' + totalCalif + ' registros');
+    }
+    
+    Logger.log('==========================================');
+    Logger.log('✅ TEST COMPLETADO EXITOSAMENTE');
+    Logger.log('==========================================');
+    Logger.log('URL: ' + ScriptApp.getService().getUrl());
+    
+  } catch (error) {
+    Logger.log('==========================================');
+    Logger.log('❌ ERROR EN TEST');
+    Logger.log('==========================================');
+    Logger.log(error.toString());
+  }
 }
 
-/**
- * Función para crear menú personalizado en Google Sheets
- * Se ejecuta automáticamente al abrir la hoja
- */
+function debugUsuarioActual() {
+  Logger.log('🔍 Debug manual iniciado...');
+  const resultado = obtenerDatosUsuarioActual();
+  Logger.log('Resultado:');
+  Logger.log(JSON.stringify(resultado, null, 2));
+  return resultado;
+}
+
+// ============================================
+// MENÚ PERSONALIZADO
+// ============================================
+
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('📊 Sistema de Notas')
     .addItem('🚀 Abrir Web App', 'abrirWebApp')
     .addItem('🔧 Test de Conexión', 'testConexion')
+    .addItem('🐛 Debug Usuario Actual', 'debugUsuarioActual')
     .addSeparator()
     .addItem('📖 Ayuda', 'mostrarAyuda')
     .addToUi();
 }
 
-/**
- * Abre la Web App en una nueva ventana
- */
 function abrirWebApp() {
   const url = ScriptApp.getService().getUrl();
   const html = '<html><script>window.open("' + url + '");google.script.host.close();</script></html>';
@@ -496,18 +600,19 @@ function abrirWebApp() {
   SpreadsheetApp.getUi().showModalDialog(ui, 'Abriendo Web App...');
 }
 
-/**
- * Muestra ayuda básica
- */
 function mostrarAyuda() {
   const ui = SpreadsheetApp.getUi();
   ui.alert(
     'Sistema de Reportes Académicos - CITEN',
-    '1. Asegúrate de tener datos en las pestañas: Estudiantes, Competencias y BD_Calificaciones\n\n' +
+    'PASOS PARA IMPLEMENTAR:\n\n' +
+    '1. Asegúrate de tener datos en: Estudiantes y BD_Calificaciones\n\n' +
     '2. Ve a Implementar > Nueva implementación > Aplicación web\n\n' +
-    '3. Configura: Ejecutar como "Yo" y Acceso "Cualquier usuario"\n\n' +
-    '4. Copia la URL y compártela con los estudiantes\n\n' +
-    '5. Cada usuario verá solo sus propias calificaciones',
+    '3. Configura:\n' +
+    '   - Ejecutar como: "Yo"\n' +
+    '   - Acceso: "Cualquier usuario"\n\n' +
+    '4. Copia la URL y compártela\n\n' +
+    '5. Usa "Test de Conexión" para verificar\n\n' +
+    '6. Usa "Debug Usuario Actual" para ver logs detallados',
     ui.ButtonSet.OK
   );
 }
