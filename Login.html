@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --citen-azul-oscuro: #003366;
+      --citen-dorado: #FFB81C;
+    }
+    body {
+      background: linear-gradient(135deg, #e8f1f8 0%, #b8d4e8 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      font-family: 'Poppins', sans-serif;
+    }
+    .login-card {
+      background: white;
+      padding: 40px;
+      border-radius: 20px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+      text-align: center;
+      max-width: 450px;
+      width: 90%;
+      border-top: 8px solid var(--citen-azul-oscuro);
+    }
+    .login-card img {
+      height: 80px;
+      margin-bottom: 20px;
+    }
+    .login-card h2 {
+      color: var(--citen-azul-oscuro);
+      font-weight: 700;
+      margin-bottom: 15px;
+    }
+    .login-card p {
+      color: #555;
+      margin-bottom: 25px;
+    }
+    .user-info {
+      background: #f8f9fa;
+      border: 1px solid #e1e8ed;
+      border-radius: 10px;
+      padding: 15px;
+      margin-bottom: 25px;
+      font-size: 0.9em;
+    }
+    .user-info strong {
+      word-break: break-all;
+    }
+    .btn-google {
+      background-color: #4285F4;
+      color: white;
+      font-weight: 600;
+      width: 100%;
+      padding: 12px;
+      border-radius: 10px;
+      transition: all 0.3s ease;
+    }
+    .btn-google:hover {
+      background-color: #357ae8;
+      color: white;
+    }
+    .switch-account {
+      margin-top: 15px;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-card">
+    <img src="https://citen.edu.pe/wp-content/uploads/2023/05/ESCUDO-CITEN-1.png" alt="Logo CITEN">
+    <h2>Acceso al Portal del Estudiante</h2>
+    <p>Tu cuenta de Google no se encuentra registrada en nuestro sistema.</p>
+    
+    <div id="user-info-container" class="user-info" style="display: none;">
+      Estás intentando acceder con la cuenta:
+      <strong id="user-email">Cargando...</strong>
+    </div>
+
+    <button id="login-button" class="btn btn-google">
+      <i class="fab fa-google"></i> Iniciar Sesión con Google
+    </button>
+    <div class="switch-account">
+      <a href="https://accounts.google.com/logout" target="_blank">¿No es tu cuenta? Cambiar de cuenta aquí.</a>
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener("DOMContentLoaded", function() {
+      const emailElement = document.getElementById('user-email');
+      const userInfoContainer = document.getElementById('user-info-container');
+      const loginButton = document.getElementById('login-button');
+
+      // Pide al servidor el email del usuario actual
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (data.email) {
+            emailElement.textContent = data.email;
+            userInfoContainer.style.display = 'block';
+          } else {
+            emailElement.textContent = "No se pudo detectar una cuenta de Google.";
+          }
+          // El botón de login simplemente recarga la página para que Google re-autentique
+          loginButton.onclick = function() {
+            window.top.location.href = data.appUrl;
+          };
+        })
+        .withFailureHandler(function(error) {
+           emailElement.textContent = "Error al contactar al servidor.";
+           console.error(error);
+        })
+        .getLoginInfo();
+    });
+  </script>
+
+</body>
+</html>
