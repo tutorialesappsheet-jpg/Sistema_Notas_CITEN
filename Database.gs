@@ -15,31 +15,7 @@
  */
 
 
-function obtenerTodosEstudiantes() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  const sheet = ss.getSheetByName(SHEETS.ESTUDIANTES);
-  const data = sheet.getDataRange().getValues();
-  
-  const estudiantes = [];
-  
-  // Saltar encabezados
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0]) { // Solo si tiene ID
-      estudiantes.push({
-        id: data[i][0],
-        apellidos: data[i][1],
-        nombres: data[i][2],
-        nombreCompleto: `${data[i][1]}, ${data[i][2]}`,
-        correo: data[i][3],
-        grado: data[i][4],
-        seccion: data[i][5],
-        fotoUrl: data[i][6] || 'https://via.placeholder.com/150'
-      });
-    }
-  }
-  
-  return estudiantes;
-}
+
 
 /**
  * Obtiene todas las competencias disponibles
@@ -633,4 +609,173 @@ function testDatabase() {
   }
   
   Logger.log('\n✅ Test de Database completado');
+}
+
+// Archivo: Database.gs
+
+/**
+ * VERSIÓN CORREGIDA:
+ * Obtiene todos los usuarios (estudiantes y docentes) y ahora SÍ incluye su ROL.
+ * @returns {Array} Lista de usuarios, cada uno con su rol.
+ */
+function obtenerTodosEstudiantes() {
+  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const sheet = ss.getSheetByName(SHEETS.ESTUDIANTES); // Debe apuntar a tu hoja "Usuarios"
+  const data = sheet.getDataRange().getValues();
+  
+  const usuarios = [];
+  // Saltar encabezados (i=1)
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0]) { // Solo si tiene ID
+      usuarios.push({
+        id: data[i][0],
+        apellidos: data[i][1],
+        nombres: data[i][2],
+        nombreCompleto: `${data[i][1]}, ${data[i][2]}`,
+        correo: data[i][3],
+        grado: data[i][4],
+        seccion: data[i][5],
+        fotoUrl: data[i][6] || 'https://via.placeholder.com/150',
+        // --- CAMBIO CLAVE AQUÍ ---
+        // Leemos la columna H (índice 7) para obtener el rol del usuario
+        rol: data[i][7] || 'Estudiante'
+      });
+    }
+  }
+  return usuarios;
+}
+
+
+/**
+ * VERSIÓN MEJORADA:
+ * Obtiene solo los estudiantes de un grado y sección específicos.
+ * Ahora compara los valores como texto para evitar errores de tipo (número vs. texto).
+ * @param {string} grado El grado a filtrar.
+ * @param {string} seccion La sección a filtrar.
+ * @returns {Array} Una lista de objetos de estudiante.
+ */
+function obtenerEstudiantesPorGrado(grado, seccion) {
+  // Comprobación de seguridad
+  const usuarioActual = obtenerUsuarioPorEmail(Session.getActiveUser().getEmail());
+  if (!usuarioActual || usuarioActual.rol !== 'Docente') {
+    return { error: 'Acceso no autorizado' };
+  }
+
+  const todosLosUsuarios = obtenerTodosEstudiantes(); // Ahora esta función devuelve el rol
+  
+  // Filtramos primero para quedarnos solo con los usuarios que tienen el rol "Estudiante"
+  const estudiantes = todosLosUsuarios.filter(usuario => usuario.rol === 'Estudiante');
+
+  // Luego, filtramos por grado y sección
+  return estudiantes.filter(est => {
+    // --- CAMBIO CLAVE AQUÍ ---
+    // Comparamos los valores como String para evitar problemas de tipos de datos
+    // (Ej: el número 5 de la hoja vs. el texto "5" del formulario)
+    return String(est.grado) === String(grado) && String(est.seccion) === String(seccion);
+  });
+}
+
+
+/**
+ * Registra un array de calificaciones en la hoja de cálculo de una sola vez.
+ * Es mucho más rápido que hacerlo uno por uno.
+ * @param {Array<Object>} calificacionesArray Un array de objetos, donde cada objeto es una calificación.
+ * @returns {Object} Un objeto con el resultado de la operación.
+ */
+function registrarCalificacionesEnLote(calificacionesArray) {
+  // Comprobación de seguridad
+  const usuarioActual = obtenerUsuarioPorEmail(Session.getActiveUser().getEmail());
+  if (!usuarioActual || usuarioActual.rol !== 'Docente') {
+    return { success: false, mensaje: 'Acceso no autorizado' };
+  }
+  
+  try {
+    const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    const sheet = ss.getSheetByName(SHEETS.CALIFICACIONES);
+    
+    // Convertimos el array de objetos en un array de arrays para la hoja de cálculo
+    const filasParaAgregar = calificacionesArray.map(datos => {
+      const notaLiteral = convertirNotaALiteral(datos.calificacionNum); // Reutilizamos la función que ya tienes
+      return [
+        datos.idEstudiante,
+        datos.apellidos,
+        datos.nombres,
+        datos.correo,
+        datos.grado,
+        datos.seccion,
+        datos.area,
+        datos.competencia,
+        notaLiteral,
+        datos.calificacionNum,
+        datos.periodo,
+        new Date(datos.fecha), // Aseguramos que sea un objeto de fecha
+        datos.retroalimentacion || ''
+      ];
+    });
+
+    if (filasParaAgregar.length === 0) {
+      return { success: false, mensaje: 'No se enviaron calificaciones para registrar.' };
+    }
+
+    // Usamos setValues() para insertar todas las filas de una vez (mucho más eficiente)
+    const ultimaFila = sheet.getLastRow();
+    sheet.getRange(ultimaFila + 1, 1, filasParaAgregar.length, filasParaAgregar[0].length)
+         .setValues(filasParaAgregar);
+         
+    return { success: true, mensaje: `${filasParaAgregar.length} calificaciones fueron registradas exitosamente.` };
+
+  } catch (error) {
+    Logger.log('ERROR en registrarCalificacionesEnLote: ' + error.toString());
+    return { success: false, mensaje: 'Error al registrar en lote: ' + error.toString() };
+  }
+}
+
+
+// Archivo: Database.gs
+
+/**
+ * VERSIÓN PARA DATATABLES:
+ * Obtiene TODAS las calificaciones registradas por el docente actual.
+ * El filtrado y la ordenación se harán en el frontend con la biblioteca DataTables.
+ * @returns {Array|Object} Un array con las calificaciones o un objeto de error.
+ */
+function obtenerTodasMisCalificaciones() {
+  // Primero, obtenemos la información del docente que ha iniciado sesión.
+  const usuarioActual = obtenerUsuarioPorEmail(Session.getActiveUser().getEmail());
+  
+  // Medida de seguridad: si no es un docente, no se devuelve nada.
+  if (!usuarioActual || usuarioActual.rol !== 'Docente') {
+    return { error: 'Acceso no autorizado' };
+  }
+
+  try {
+    const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.CALIFICACIONES);
+    const data = sheet.getDataRange().getValues();
+    const calificaciones = [];
+    const correoDocenteLogueado = usuarioActual.correo;
+    
+    // Recorremos toda la base de datos de calificaciones
+    for (let i = 1; i < data.length; i++) {
+      const fila = data[i];
+      
+      // La única condición en el backend: la nota debe pertenecer al docente logueado.
+      if (fila[13] === correoDocenteLogueado) { 
+        // Creamos un objeto limpio con los datos que la tabla necesita
+        calificaciones.push({
+          fecha: fila[11] ? Utilities.formatDate(new Date(fila[11]), Session.getScriptTimeZone(), "yyyy-MM-dd") : '',
+          estudiante: `${fila[1]}, ${fila[2]}`, // Combinamos Apellidos y Nombres
+          grado: fila[4],
+          seccion: fila[5],
+          area: fila[6],
+          competencia: fila[7],
+          nota: fila[9],
+          periodo: fila[10]
+        });
+      }
+    }
+    return calificaciones; // Devolvemos el array completo
+  } catch (e) {
+    Logger.log("Error en obtenerTodasMisCalificaciones: " + e.toString());
+    return { error: e.toString() };
+  }
 }
