@@ -83,32 +83,30 @@ function registrarCalificacionesEnLote(calificacionesArray) {
 
 // Archivo: Code.gs
 
+// REEMPLAZA ESTA FUNCIÓN EN CODE.GS
+
 function doGet(e) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    const token = e.parameter.token; // Busca un 'token' en la URL (ej: ?token=xyz)
+    const userEmail = obtenerEmailDesdeToken(token);
 
-    // 1. Si no hay un usuario logueado, mostrar la página de Login.
+    // 1. Si el token no es válido o no existe, mostrar la página de Login.
     if (!userEmail) {
-      Logger.log('Acceso sin cuenta de Google. Mostrando página de Login.');
       return HtmlService.createTemplateFromFile('Login').evaluate()
-        .setTitle('Iniciar Sesión - CITEN');
+        .setTitle('Ingreso al Sistema - CITEN');
     }
+    
+    // Si el token es válido, continuamos como antes...
+    const usuario = obtenerUsuarioPorEmail(userEmail);
 
-    Logger.log('Usuario accediendo: ' + userEmail);
-    const usuario = obtenerUsuarioPorEmail(userEmail); // Esta función la modificaremos a continuación
-
-    // 2. Si el usuario no está en la base de datos, mostrar Login.
     if (!usuario) {
-      Logger.log('Usuario NO REGISTRADO. Mostrando página de Login.');
-      return HtmlService.createTemplateFromFile('Login').evaluate()
-        .setTitle('Iniciar Sesión - CITEN');
+      // Si el usuario del token ya no existe en la BD, se muestra error.
+      return crearPaginaError('El usuario asociado a esta sesión ya no existe.');
     }
 
-    // 3. ENRUTADOR DE ROLES: Decide qué página mostrar.
+    // 2. ENRUTADOR DE ROLES (esta parte no cambia)
     if (usuario.rol === 'Docente') {
-      // --- Si es DOCENTE, carga el panel de administración ---
-      Logger.log('Acceso de DOCENTE: ' + userEmail);
-      const template = HtmlService.createTemplateFromFile('Maestro'); // Crearemos este archivo
+      const template = HtmlService.createTemplateFromFile('Maestro');
       template.usuario = usuario;
       return template.evaluate()
         .setTitle('Panel del Docente - CITEN')
@@ -116,9 +114,7 @@ function doGet(e) {
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 
     } else if (usuario.rol === 'Estudiante') {
-      // --- Si es ESTUDIANTE, carga el portal de notas ---
-      Logger.log('Acceso de ESTUDIANTE: ' + userEmail);
-      const datosCompletos = obtenerDatosUsuarioActual();
+      const datosCompletos = obtenerDatosUsuarioActual(userEmail); // ¡IMPORTANTE! Pasamos el email
       if (datosCompletos.error) {
         return crearPaginaError('Error al obtener los datos del estudiante: ' + datosCompletos.error);
       }
@@ -130,8 +126,7 @@ function doGet(e) {
         .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
         .addMetaTag('viewport', 'width=device-width, initial-scale=1');
     } else {
-       // Por si hay un rol no definido
-       return crearPaginaError('Tu rol no está definido en el sistema. Contacta al administrador.');
+       return crearPaginaError('Tu rol no está definido en el sistema.');
     }
       
   } catch (error) {
@@ -244,72 +239,80 @@ function include(filename) {
 // FUNCIONES DE AUTENTICACIÓN Y USUARIOS
 // ============================================
 
-function obtenerDatosUsuarioActual() {
+/**
+ * Carga TODOS los datos necesarios para el dashboard del ESTUDIANTE.
+ * Esta es la versión que incluye el cálculo del historial y el nuevo reporte de notas.
+ */
+/**
+ * Carga TODOS los datos necesarios para el dashboard del ESTUDIANTE.
+ * Esta es la versión que incluye el historial y AMBOS reportes de notas.
+ */
+/**
+ * Carga TODOS los datos necesarios para el dashboard del ESTUDIANTE.
+ * Esta versión está adaptada para funcionar con el sistema de login manual (tokens).
+ * @param {string} userEmail - El correo del usuario verificado, pasado como parámetro.
+ */
+function obtenerDatosUsuarioActual(userEmail) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
-    Logger.log('=== obtenerDatosUsuarioActual ===');
-    Logger.log('Email: ' + userEmail);
-    
+    // const userEmail = Session.getActiveUser().getEmail(); // SE ELIMINA ESTA LÍNEA
+
     const usuario = obtenerUsuarioPorEmail(userEmail);
-    
+
     if (!usuario) {
-      Logger.log('ERROR: Usuario no encontrado');
-      // CAMBIO: Devolver objeto con estructura válida pero sin datos
+      // Si no se encuentra el usuario, devuelve una estructura de datos vacía pero completa.
       return {
         error: 'Usuario no encontrado',
         usuario: null,
-        rol: 'estudiante',
         calificaciones: [],
         promedios: { general: 0, porArea: {}, porCompetencia: {} },
-        estadisticas: { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } }
+        estadisticas: { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } },
+        historico: [],
+        reporte: {},
+        reporteSIGAN: {}
       };
     }
     
-    Logger.log('Usuario encontrado: ' + usuario.nombres);
-    
+    // Se obtienen todos los datos necesarios usando el email proporcionado
     const calificaciones = obtenerCalificacionesPorEstudiante(userEmail);
-    Logger.log('Calificaciones: ' + calificaciones.length);
-    
     const promedios = calcularPromedios(calificaciones);
     const estadisticas = calcularEstadisticas(calificaciones);
+    const historico = obtenerHistoricoProgreso(userEmail); 
+    const datosReporte = obtenerDatosParaReporte(userEmail);
+    const datosReporteSIGAN = obtenerDatosParaReporteSIGAN(userEmail);
     
-    // CAMBIO: Asegurar que SIEMPRE devuelva un objeto válido
+    // Se construye el objeto final con todos los datos
     const resultado = {
-      usuario: {
-        id: usuario.id || '',
-        apellidos: usuario.apellidos || '',
-        nombres: usuario.nombres || '',
-        correo: usuario.correo || '',
-        grado: usuario.grado || '',
-        seccion: usuario.seccion || '',
-        fotoUrl: usuario.fotoUrl || 'https://via.placeholder.com/150'
-      },
-      rol: 'estudiante',
+      usuario: usuario,
       calificaciones: calificaciones || [],
       promedios: promedios || { general: 0, porArea: {}, porCompetencia: {} },
-      estadisticas: estadisticas || { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } }
+      estadisticas: estadisticas || { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } },
+      historico: historico || [],
+      reporte: datosReporte || {},
+      reporteSIGAN: datosReporteSIGAN || {}
     };
-    
-    Logger.log('Resultado preparado exitosamente');
-    Logger.log('=== FIN obtenerDatosUsuarioActual ===');
     
     return resultado;
     
   } catch (error) {
     Logger.log('ERROR CRÍTICO en obtenerDatosUsuarioActual: ' + error.toString());
-    Logger.log('Stack: ' + error.stack);
-    
-    // CAMBIO: Incluso en error, devolver objeto válido
+    // En caso de un error inesperado, también devuelve una estructura completa y vacía.
     return {
       error: error.toString(),
       usuario: null,
-      rol: 'estudiante',
       calificaciones: [],
       promedios: { general: 0, porArea: {}, porCompetencia: {} },
-      estadisticas: { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } }
+      estadisticas: { total: 0, porNivel: { AD: 0, A: 0, B: 0, C: 0 } },
+      historico: [],
+      reporte: {},
+      reporteSIGAN: {}
     };
   }
 }
+
+
+
+
+
 
 // En Code.gs, modifica esta función
 function obtenerUsuarioPorEmail(email) {
@@ -755,4 +758,60 @@ function guardarNuevaCalificacion(datosCalificacion) {
   // Puedes reutilizar o adaptar la función 'registrarCalificacion' que ya tienes.
   // Es importante validar que todos los datos (idEstudiante, area, etc.) vengan completos.
   return registrarCalificacion(datosCalificacion); // Reutilizamos la función existente
+}
+
+// AÑADE ESTA FUNCIÓN A CODE.GS
+
+/**
+ * Verifica las credenciales de un usuario contra la hoja 'Usuarios'.
+ * @param {string} email El correo ingresado por el usuario.
+ * @param {string} id El ID/DNI del usuario, usado como contraseña.
+ * @returns {Object} Un objeto con el resultado de la validación y un token si es exitoso.
+ */
+function verificarCredenciales(email, id) {
+  try {
+    const usuario = obtenerUsuarioPorEmail(email);
+
+    // 1. Verifica si el usuario existe
+    if (!usuario) {
+      return { success: false, message: 'Usuario no encontrado.' };
+    }
+
+    // 2. Verifica si la "contraseña" (el ID/DNI) coincide.
+    // Comparamos como string para evitar errores de tipo.
+    if (String(usuario.id).trim() === String(id).trim()) {
+      // 3. Si las credenciales son correctas, creamos un token temporal.
+      // Este token nos permitirá "recordar" al usuario en la siguiente carga de página.
+      const token = generarTokenTemporal(email);
+      return { success: true, token: token };
+    } else {
+      return { success: false, message: 'Contraseña incorrecta.' };
+    }
+  } catch (e) {
+    return { success: false, message: 'Error en el servidor: ' + e.toString() };
+  }
+}
+
+/**
+ * Genera un token simple y lo guarda en el caché con una validez de 10 minutos.
+ * @param {string} email El email del usuario para asociar al token.
+ * @returns {string} El token generado.
+ */
+function generarTokenTemporal(email) {
+  const token = `token_${Date.now()}_${Math.random()}`;
+  // CacheService nos permite guardar datos temporalmente en el servidor.
+  const cache = CacheService.getScriptCache();
+  cache.put(token, email, 600); // Guardar por 600 segundos (10 minutos)
+  return token;
+}
+
+/**
+ * Obtiene el email del usuario a partir de un token temporal.
+ * @param {string} token El token a verificar.
+ * @returns {string|null} El email del usuario o null si el token no es válido.
+ */
+function obtenerEmailDesdeToken(token) {
+  if (!token) return null;
+  const cache = CacheService.getScriptCache();
+  return cache.get(token);
 }
