@@ -1,0 +1,837 @@
+<script>
+/**
+ * SISTEMA DE REPORTES ACADÉMICOS - CITEN
+ * Archivo: JavaScript.html
+ * Descripción: Lógica del frontend para el dashboard del estudiante
+ */
+
+// ============================================
+// VARIABLES GLOBALES
+// ============================================
+let datosEstudiante = null;
+let calificaciones = [];
+let promedios = {};
+let estadisticas = {};
+
+// ============================================
+// INICIALIZACIÓN
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+  inicializarSistema();
+  configurarNavegacion();
+  cargarGoogleCharts();
+});
+
+/**
+ * Inicializa el sistema cargando datos del estudiante
+ */
+function inicializarSistema() {
+  mostrarLoader();
+  
+  // Llamar al backend para obtener datos del estudiante actual
+  google.script.run
+    .withSuccessHandler(procesarDatosEstudiante)
+    .withFailureHandler(mostrarError)
+    .obtenerDatosUsuarioActual();
+}
+
+/**
+ * Procesa los datos recibidos del backend
+ */
+function procesarDatosEstudiante(datos) {
+  if (datos.error) {
+    mostrarError(datos.error);
+    return;
+  }
+  
+  datosEstudiante = datos.usuario;
+  calificaciones = datos.calificaciones;
+  promedios = datos.promedios;
+  estadisticas = datos.estadisticas;
+  
+  // Actualizar interfaz
+  actualizarResumenGeneral();
+  actualizarSidebar();
+  cargarUltimasCalificaciones();
+  cargarAreasDetalle();
+  cargarCompetenciasDetalle();
+  cargarHistorico();
+  cargarTodasCalificaciones();
+  cargarFiltros();
+  
+  ocultarLoader();
+}
+
+// ============================================
+// NAVEGACIÓN
+// ============================================
+function configurarNavegacion() {
+  const navLinks = document.querySelectorAll('.sidebar-nav a');
+  const sections = document.querySelectorAll('.content-section');
+  
+  navLinks.forEach(link => {
+    link.addEventListener('click', function(e) {
+      e.preventDefault();
+      
+      const targetId = this.getAttribute('data-target');
+      
+      // Remover clase active de todos los enlaces
+      navLinks.forEach(l => l.classList.remove('active'));
+      this.classList.add('active');
+      
+      // Ocultar todas las secciones
+      sections.forEach(s => s.classList.remove('active'));
+      
+      // Mostrar la sección seleccionada
+      const targetSection = document.getElementById(targetId);
+      if (targetSection) {
+        targetSection.classList.add('active');
+      }
+    });
+  });
+}
+
+// ============================================
+// ACTUALIZACIÓN DE RESUMEN GENERAL
+// ============================================
+function actualizarResumenGeneral() {
+  // Promedio general
+  const promedioGeneral = promedios.general || 0;
+  const nivelGeneral = obtenerNivelLogro(promedioGeneral);
+  
+  document.getElementById('promedio-general').textContent = promedioGeneral;
+  const nivelElement = document.getElementById('nivel-general');
+  nivelElement.textContent = nivelGeneral;
+  nivelElement.className = 'stat-badge nivel-' + nivelGeneral;
+  
+  // Estadísticas
+  document.getElementById('total-ad').textContent = estadisticas.porNivel.AD || 0;
+  document.getElementById('total-evaluaciones').textContent = estadisticas.total || 0;
+  
+  // Áreas de riesgo (promedio < 14)
+  let areasRiesgo = 0;
+  for (let area in promedios.porArea) {
+    if (parseFloat(promedios.porArea[area].promedio) < 14) {
+      areasRiesgo++;
+    }
+  }
+  document.getElementById('areas-riesgo').textContent = areasRiesgo;
+}
+
+/**
+ * Actualiza el promedio en el sidebar
+ */
+function actualizarSidebar() {
+  const promedioGeneral = promedios.general || 0;
+  const nivelGeneral = obtenerNivelLogro(promedioGeneral);
+  
+  document.getElementById('promedio-sidebar').textContent = promedioGeneral;
+  document.getElementById('nivel-sidebar').textContent = obtenerTextoNivel(nivelGeneral);
+}
+
+// ============================================
+// ÚLTIMAS CALIFICACIONES
+// ============================================
+function cargarUltimasCalificaciones() {
+  const tbody = document.getElementById('ultimas-notas');
+  tbody.innerHTML = '';
+  
+  if (!calificaciones || calificaciones.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">No hay calificaciones registradas</td></tr>';
+    return;
+  }
+  
+  // Ordenar por fecha (más recientes primero) y tomar las últimas 5
+  const ultimas = calificaciones
+    .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
+    .slice(0, 5);
+  
+  ultimas.forEach(cal => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${formatearFecha(cal.fecha)}</td>
+      <td>${cal.area}</td>
+      <td>${truncarTexto(cal.competencia, 40)}</td>
+      <td><span class="nivel-badge nivel-${cal.calificacion}">${cal.calificacion}</span></td>
+      <td><strong>${cal.calificacionNum}</strong></td>
+      <td>${cal.retroalimentacion || '<em class="text-muted">Sin retroalimentación</em>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ============================================
+// ÁREAS CURRICULARES
+// ============================================
+function cargarAreasDetalle() {
+  const container = document.getElementById('areas-container');
+  container.innerHTML = '';
+  
+  if (!promedios.porArea || Object.keys(promedios.porArea).length === 0) {
+    container.innerHTML = '<div class="col-12"><p class="text-center text-muted">No hay datos de áreas disponibles</p></div>';
+    return;
+  }
+  
+  for (let area in promedios.porArea) {
+    const datos = promedios.porArea[area];
+    const promedio = datos.promedio;
+    const nivel = obtenerNivelLogro(promedio);
+    const colorBorde = obtenerColorNivel(nivel);
+    
+    // Obtener competencias de esta área
+    const competenciasArea = {};
+    for (let comp in promedios.porCompetencia) {
+      if (promedios.porCompetencia[comp].area === area) {
+        competenciasArea[comp] = promedios.porCompetencia[comp];
+      }
+    }
+    
+    const cardHTML = `
+      <div class="col-md-6">
+        <div class="area-card" style="border-left-color: ${colorBorde};">
+          <div class="area-header">
+            <h4>${area}</h4>
+            <div class="area-promedio">
+              <span class="area-promedio-valor">${promedio}</span>
+              <span class="nivel-badge nivel-${nivel}">${nivel}</span>
+            </div>
+          </div>
+          <div class="competencias-list">
+            ${generarListaCompetencias(competenciasArea)}
+          </div>
+        </div>
+      </div>
+    `;
+    
+    container.innerHTML += cardHTML;
+  }
+}
+
+function generarListaCompetencias(competencias) {
+  let html = '';
+  
+  for (let comp in competencias) {
+    const datos = competencias[comp];
+    const promedio = datos.promedio;
+    const nivel = obtenerNivelLogro(promedio);
+    const nombreComp = comp.split(' - ')[1]; // Quitar el nombre del área
+    
+    html += `
+      <div class="competencia-item">
+        <span class="competencia-nombre">${truncarTexto(nombreComp, 50)}</span>
+        <div class="competencia-nota">
+          <strong>${promedio}</strong>
+          <span class="nivel-badge nivel-${nivel}">${nivel}</span>
+        </div>
+      </div>
+    `;
+  }
+  
+  return html || '<p class="text-muted">No hay competencias registradas</p>';
+}
+
+// ============================================
+// COMPETENCIAS DETALLADAS
+// ============================================
+function cargarCompetenciasDetalle() {
+  const container = document.getElementById('competencias-container');
+  container.innerHTML = '';
+  
+  if (!promedios.porCompetencia || Object.keys(promedios.porCompetencia).length === 0) {
+    container.innerHTML = '<p class="text-center text-muted">No hay datos de competencias disponibles</p>';
+    return;
+  }
+  
+  for (let comp in promedios.porCompetencia) {
+    const datos = promedios.porCompetencia[comp];
+    const promedio = datos.promedio;
+    const nivel = obtenerNivelLogro(promedio);
+    const [area, competencia] = comp.split(' - ');
+    
+    const cardHTML = `
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-start">
+            <div style="flex: 1;">
+              <h5><i class="fas fa-check-circle"></i> ${competencia}</h5>
+              <p class="text-muted mb-2"><i class="fas fa-book"></i> ${area}</p>
+            </div>
+            <div class="text-right">
+              <div style="font-size: 2em; font-weight: 700; color: var(--citen-azul-oscuro);">${promedio}</div>
+              <span class="nivel-badge nivel-${nivel}">${nivel}</span>
+            </div>
+          </div>
+          <div class="progress mt-3" style="height: 10px;">
+            <div class="progress-bar" role="progressbar" style="width: ${(promedio/20)*100}%; background: ${obtenerColorNivel(nivel)};" aria-valuenow="${promedio}" aria-valuemin="0" aria-valuemax="20"></div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    container.innerHTML += cardHTML;
+  }
+}
+
+// ============================================
+// HISTÓRICO
+// ============================================
+function cargarHistorico() {
+  // Esta función se implementará cuando tengamos datos de múltiples periodos
+  const tbody = document.getElementById('tabla-periodos');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Histórico disponible al finalizar el periodo actual</td></tr>';
+}
+
+// ============================================
+// TODAS LAS CALIFICACIONES
+// ============================================
+function cargarTodasCalificaciones() {
+  const tbody = document.getElementById('tabla-calificaciones');
+  tbody.innerHTML = '';
+  
+  if (!calificaciones || calificaciones.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No hay calificaciones registradas</td></tr>';
+    return;
+  }
+  
+  // Ordenar por fecha descendente
+  const ordenadas = calificaciones.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+  
+  ordenadas.forEach(cal => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${formatearFecha(cal.fecha)}</td>
+      <td>${cal.area}</td>
+      <td>${cal.competencia}</td>
+      <td><span class="nivel-badge nivel-${cal.calificacion}">${cal.calificacion}</span></td>
+      <td><strong>${cal.calificacionNum}</strong></td>
+      <td>${cal.periodo}</td>
+      <td>${cal.retroalimentacion || '<em class="text-muted">-</em>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ============================================
+// FILTROS
+// ============================================
+function cargarFiltros() {
+  // Obtener áreas únicas
+  const areas = [...new Set(calificaciones.map(c => c.area))];
+  const periodos = [...new Set(calificaciones.map(c => c.periodo))];
+  
+  // Llenar select de áreas
+  const selectArea = document.getElementById('filtro-area');
+  const selectAreaComp = document.getElementById('filtro-area-comp');
+  
+  areas.forEach(area => {
+    const option = document.createElement('option');
+    option.value = area;
+    option.textContent = area;
+    selectArea.appendChild(option.cloneNode(true));
+    selectAreaComp.appendChild(option);
+  });
+  
+  // Llenar select de periodos
+  const selectPeriodo = document.getElementById('filtro-periodo');
+  periodos.forEach(periodo => {
+    const option = document.createElement('option');
+    option.value = periodo;
+    option.textContent = periodo;
+    selectPeriodo.appendChild(option);
+  });
+}
+
+function aplicarFiltros() {
+  const areaSeleccionada = document.getElementById('filtro-area').value;
+  const periodoSeleccionado = document.getElementById('filtro-periodo').value;
+  
+  let calificacionesFiltradas = calificaciones;
+  
+  if (areaSeleccionada) {
+    calificacionesFiltradas = calificacionesFiltradas.filter(c => c.area === areaSeleccionada);
+  }
+  
+  if (periodoSeleccionado) {
+    calificacionesFiltradas = calificacionesFiltradas.filter(c => c.periodo === periodoSeleccionado);
+  }
+  
+  // Actualizar tabla
+  const tbody = document.getElementById('tabla-calificaciones');
+  tbody.innerHTML = '';
+  
+  if (calificacionesFiltradas.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No hay calificaciones que coincidan con los filtros</td></tr>';
+    return;
+  }
+  
+  calificacionesFiltradas.forEach(cal => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${formatearFecha(cal.fecha)}</td>
+      <td>${cal.area}</td>
+      <td>${cal.competencia}</td>
+      <td><span class="nivel-badge nivel-${cal.calificacion}">${cal.calificacion}</span></td>
+      <td><strong>${cal.calificacionNum}</strong></td>
+      <td>${cal.periodo}</td>
+      <td>${cal.retroalimentacion || '<em class="text-muted">-</em>'}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ============================================
+// GRÁFICOS CON GOOGLE CHARTS
+// ============================================
+function cargarGoogleCharts() {
+  google.charts.load('current', {'packages':['corechart', 'bar']});
+  google.charts.setOnLoadCallback(function() {
+    // Los gráficos se dibujarán cuando tengamos los datos
+  });
+}
+
+function dibujarGraficoAreas() {
+  if (!promedios.porArea || Object.keys(promedios.porArea).length === 0) {
+    document.getElementById('chart-areas').innerHTML = '<p class="text-center text-muted">No hay datos para mostrar</p>';
+    return;
+  }
+  
+  const datos = [['Área', 'Promedio']];
+  
+  for (let area in promedios.porArea) {
+    datos.push([area, parseFloat(promedios.porArea[area].promedio)]);
+  }
+  
+  const data = google.visualization.arrayToDataTable(datos);
+  
+  const options = {
+    title: 'Promedio por Área Curricular',
+    chartArea: {width: '70%'},
+    hAxis: {
+      title: 'Promedio',
+      minValue: 0,
+      maxValue: 20
+    },
+    vAxis: {
+      title: 'Área Curricular'
+    },
+    colors: ['#FFB81C'],
+    legend: { position: 'none' }
+  };
+  
+  const chart = new google.visualization.BarChart(document.getElementById('chart-areas'));
+  chart.draw(data, options);
+}
+
+function dibujarGraficoDistribucion() {
+  if (!estadisticas.porNivel) {
+    document.getElementById('chart-distribucion').innerHTML = '<p class="text-center text-muted">No hay datos para mostrar</p>';
+    return;
+  }
+  
+  const datos = [
+    ['Nivel', 'Cantidad'],
+    ['AD - Logro Destacado', estadisticas.porNivel.AD || 0],
+    ['A - Logro Esperado', estadisticas.porNivel.A || 0],
+    ['B - En Proceso', estadisticas.porNivel.B || 0],
+    ['C - En Inicio', estadisticas.porNivel.C || 0]
+  ];
+  
+  const data = google.visualization.arrayToDataTable(datos);
+  
+  const options = {
+    title: 'Distribución de Niveles de Logro',
+    pieHole: 0.4,
+    colors: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444'],
+    legend: { position: 'bottom' }
+  };
+  
+  const chart = new google.visualization.PieChart(document.getElementById('chart-distribucion'));
+  chart.draw(data, options);
+}
+
+// Dibujar gráficos cuando se carguen los datos
+function dibujarTodosGraficos() {
+  if (typeof google !== 'undefined' && google.visualization) {
+    setTimeout(() => {
+      dibujarGraficoAreas();
+      dibujarGraficoDistribucion();
+    }, 500);
+  }
+}
+
+// ============================================
+// FUNCIONES AUXILIARES
+// ============================================
+function obtenerNivelLogro(promedio) {
+  const nota = parseFloat(promedio);
+  if (nota >= 18) return 'AD';
+  if (nota >= 14) return 'A';
+  if (nota >= 11) return 'B';
+  return 'C';
+}
+
+function obtenerTextoNivel(nivel) {
+  const niveles = {
+    'AD': 'Logro Destacado',
+    'A': 'Logro Esperado',
+    'B': 'En Proceso',
+    'C': 'En Inicio'
+  };
+  return niveles[nivel] || 'Sin nivel';
+}
+
+function obtenerColorNivel(nivel) {
+  const colores = {
+    'AD': '#10b981',
+    'A': '#3b82f6',
+    'B': '#f59e0b',
+    'C': '#ef4444'
+  };
+  return colores[nivel] || '#6b7280';
+}
+
+function formatearFecha(fecha) {
+  if (!fecha) return '';
+  
+  const date = new Date(fecha);
+  if (isNaN(date.getTime())) return fecha;
+  
+  const dia = String(date.getDate()).padStart(2, '0');
+  const mes = String(date.getMonth() + 1).padStart(2, '0');
+  const anio = date.getFullYear();
+  
+  return `${dia}/${mes}/${anio}`;
+}
+
+function truncarTexto(texto, maxLength) {
+  if (!texto || texto.length <= maxLength) return texto;
+  return texto.substring(0, maxLength) + '...';
+}
+
+// ============================================
+// LOADER
+// ============================================
+function mostrarLoader() {
+  const loader = document.getElementById('global-loader');
+  if (loader) {
+    loader.style.display = 'flex';
+  }
+}
+
+function ocultarLoader() {
+  const loader = document.getElementById('global-loader');
+  if (loader) {
+    loader.style.display = 'none';
+  }
+  
+  // Dibujar gráficos después de cargar datos
+  dibujarTodosGraficos();
+}
+
+function mostrarError(error) {
+  ocultarLoader();
+  console.error('Error:', error);
+  alert('Error al cargar los datos: ' + error);
+}
+
+// ============================================
+// ACTUALIZACIÓN PERIÓDICA (OPCIONAL)
+// ============================================
+
+/**
+ * Refresca los datos cada 5 minutos
+ */
+function iniciarActualizacionAutomatica() {
+  setInterval(function() {
+    console.log('Actualizando datos...');
+    google.script.run
+      .withSuccessHandler(function(datos) {
+        if (!datos.error) {
+          calificaciones = datos.calificaciones;
+          promedios = datos.promedios;
+          estadisticas = datos.estadisticas;
+          
+          // Actualizar solo las secciones visibles
+          actualizarResumenGeneral();
+          actualizarSidebar();
+          cargarUltimasCalificaciones();
+          dibujarTodosGraficos();
+        }
+      })
+      .withFailureHandler(function(error) {
+        console.error('Error en actualización automática:', error);
+      })
+      .obtenerDatosUsuarioActual();
+  }, 300000); // 5 minutos = 300000 ms
+}
+
+// Iniciar actualización automática (comentado por defecto)
+// iniciarActualizacionAutomatica();
+
+// ============================================
+// FUNCIONES ADICIONALES PARA FUTURAS MEJORAS
+// ============================================
+
+/**
+ * Exporta las calificaciones a CSV
+ */
+function exportarCSV() {
+  if (!calificaciones || calificaciones.length === 0) {
+    alert('No hay calificaciones para exportar');
+    return;
+  }
+  
+  let csv = 'Fecha,Área,Competencia,Calificación,Nota,Periodo,Retroalimentación\n';
+  
+  calificaciones.forEach(cal => {
+    csv += `${formatearFecha(cal.fecha)},${cal.area},"${cal.competencia}",${cal.calificacion},${cal.calificacionNum},${cal.periodo},"${cal.retroalimentacion || ''}"\n`;
+  });
+  
+  // Crear un blob y descargarlo
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'mis_calificaciones.csv');
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+
+/**
+ * Imprime el reporte actual
+ */
+function imprimirReporte() {
+  window.print();
+}
+
+/**
+ * Muestra ayuda contextual
+ */
+function mostrarAyuda() {
+  const ayuda = `
+    <div style="text-align: left; max-width: 500px;">
+      <h3 style="color: var(--citen-azul-oscuro); margin-bottom: 15px;">
+        <i class="fas fa-question-circle"></i> Ayuda del Sistema
+      </h3>
+      <p><strong>¿Cómo interpretar las calificaciones?</strong></p>
+      <ul>
+        <li><span class="nivel-badge nivel-AD">AD</span> Logro Destacado (18-20): Supera el nivel esperado</li>
+        <li><span class="nivel-badge nivel-A">A</span> Logro Esperado (14-17): Alcanza el nivel esperado</li>
+        <li><span class="nivel-badge nivel-B">B</span> En Proceso (11-13): Cerca del nivel esperado</li>
+        <li><span class="nivel-badge nivel-C">C</span> En Inicio (0-10): Requiere apoyo adicional</li>
+      </ul>
+      <p style="margin-top: 15px;"><strong>¿Cómo se calcula el promedio?</strong></p>
+      <p>El promedio se calcula considerando todas tus calificaciones numéricas. Las evaluaciones más recientes tienen mayor peso en el cálculo de tu nivel de competencia.</p>
+      <p style="margin-top: 15px;"><strong>¿Cada cuánto se actualiza?</strong></p>
+      <p>Los datos se actualizan en tiempo real cuando tu docente registra una nueva calificación en Google Classroom.</p>
+      <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
+        <i class="fas fa-info-circle"></i> Para más información, contacta a tu docente o al departamento académico.
+      </p>
+    </div>
+  `;
+  
+  // Crear modal (simplificado)
+  const existingModal = document.getElementById('help-modal');
+  if (existingModal) {
+    existingModal.remove();
+  }
+  
+  const modal = document.createElement('div');
+  modal.id = 'help-modal';
+  modal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+    padding: 20px;
+  `;
+  
+  modal.innerHTML = `
+    <div style="background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 50px rgba(0,0,0,0.3); max-width: 600px; max-height: 80vh; overflow-y: auto;">
+      ${ayuda}
+      <button onclick="cerrarAyuda()" class="btn btn-primary mt-3" style="width: 100%;">
+        <i class="fas fa-check"></i> Entendido
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+}
+
+function cerrarAyuda() {
+  const modal = document.getElementById('help-modal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+// ============================================
+// MENÚ HAMBURGUESA PARA MÓVIL
+// ============================================
+function toggleSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  sidebar.classList.toggle('active');
+}
+
+// Crear botón hamburguesa (se agregará automáticamente en móvil)
+if (window.innerWidth <= 768) {
+  const hamburger = document.createElement('button');
+  hamburger.innerHTML = '<i class="fas fa-bars"></i>';
+  hamburger.style.cssText = `
+    position: fixed;
+    top: 120px;
+    left: 20px;
+    z-index: 1100;
+    background: var(--citen-dorado);
+    border: none;
+    border-radius: 50%;
+    width: 50px;
+    height: 50px;
+    color: white;
+    font-size: 1.5em;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    cursor: pointer;
+  `;
+  hamburger.onclick = toggleSidebar;
+  document.body.appendChild(hamburger);
+}
+
+// Cerrar sidebar al hacer click fuera (móvil)
+document.addEventListener('click', function(e) {
+  if (window.innerWidth <= 768) {
+    const sidebar = document.querySelector('.sidebar');
+    const hamburger = e.target.closest('button');
+    
+    if (!sidebar.contains(e.target) && !hamburger && sidebar.classList.contains('active')) {
+      sidebar.classList.remove('active');
+    }
+  }
+});
+
+// ============================================
+// TOOLTIPS (OPCIONAL)
+// ============================================
+function inicializarTooltips() {
+  // Si usas Bootstrap, activa tooltips
+  if (typeof $ !== 'undefined' && $.fn.tooltip) {
+    $('[data-toggle="tooltip"]').tooltip();
+  }
+}
+
+// ============================================
+// MANEJO DE ERRORES GLOBAL
+// ============================================
+window.addEventListener('error', function(e) {
+  console.error('Error global:', e.error);
+  // Aquí podrías enviar el error a un sistema de logging
+});
+
+// ============================================
+// EVENTOS DE REDIMENSIONAMIENTO
+// ============================================
+let resizeTimer;
+window.addEventListener('resize', function() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(function() {
+    // Redibujar gráficos al cambiar tamaño de ventana
+    if (typeof google !== 'undefined' && google.visualization) {
+      dibujarTodosGraficos();
+    }
+  }, 250);
+});
+
+// ============================================
+// DETECCIÓN DE CONEXIÓN A INTERNET
+// ============================================
+window.addEventListener('online', function() {
+  console.log('Conexión restaurada');
+  // Opcional: recargar datos
+});
+
+window.addEventListener('offline', function() {
+  console.log('Sin conexión a internet');
+  alert('⚠️ Se ha perdido la conexión a internet. Algunas funciones pueden no estar disponibles.');
+});
+
+// ============================================
+// FUNCIÓN DE DEBUG (SOLO DESARROLLO)
+// ============================================
+function debugInfo() {
+  console.log('=== DEBUG INFO ===');
+  console.log('Datos Estudiante:', datosEstudiante);
+  console.log('Calificaciones:', calificaciones);
+  console.log('Promedios:', promedios);
+  console.log('Estadísticas:', estadisticas);
+  console.log('==================');
+}
+
+// Exponer función de debug en consola
+window.debugSistema = debugInfo;
+
+// ============================================
+// MENSAJE DE BIENVENIDA (SOLO PRIMERA VEZ)
+// ============================================
+window.addEventListener('load', function() {
+  const primeraVez = !localStorage.getItem('visitado_antes');
+  
+  if (primeraVez) {
+    setTimeout(function() {
+      const mensaje = `
+        <div style="text-align: center;">
+          <i class="fas fa-graduation-cap" style="font-size: 3em; color: var(--citen-dorado); margin-bottom: 15px;"></i>
+          <h3 style="color: var(--citen-azul-oscuro); margin-bottom: 15px;">
+            ¡Bienvenido a tu Portal Académico!
+          </h3>
+          <p>Aquí podrás consultar tus calificaciones en tiempo real, ver tu progreso académico y conocer en qué áreas puedes mejorar.</p>
+          <p style="margin-top: 15px; font-size: 0.9em; color: #666;">
+            <i class="fas fa-lightbulb"></i> Tip: Usa el menú lateral para navegar entre las diferentes secciones.
+          </p>
+        </div>
+      `;
+      
+      const modal = document.createElement('div');
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10000;
+        padding: 20px;
+      `;
+      
+      modal.innerHTML = `
+        <div style="background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 50px rgba(0,0,0,0.3); max-width: 500px;">
+          ${mensaje}
+          <button onclick="this.closest('div').parentElement.remove(); localStorage.setItem('visitado_antes', 'true');" class="btn btn-primary mt-4" style="width: 100%;">
+            <i class="fas fa-check"></i> Comenzar
+          </button>
+        </div>
+      `;
+      
+      document.body.appendChild(modal);
+    }, 1000);
+  }
+});
+
+// ============================================
+// LOG DE INICIALIZACIÓN
+// ============================================
+console.log('%c Sistema de Reportes Académicos - CITEN ', 'background: #003366; color: #FFB81C; font-size: 16px; font-weight: bold; padding: 10px;');
+console.log('%c Versión 1.0 | Desarrollado para estudiantes ', 'background: #FFB81C; color: #003366; font-size: 12px; padding: 5px;');
+console.log('Para ver información de debug, escribe: debugSistema()');
+</script>
