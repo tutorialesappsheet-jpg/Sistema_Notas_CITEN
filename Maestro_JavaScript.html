@@ -1,0 +1,352 @@
+<script>
+let competenciasGlobal = [];
+let estudiantesGlobal = [];
+
+document.addEventListener("DOMContentLoaded", function() {
+  // Configuración inicial de los selectores y botones
+  inicializarSelectores();
+  
+  document.getElementById('btn-cargar-estudiantes').addEventListener('click', cargarTablaEstudiantes);
+  document.getElementById('btn-guardar-lote').addEventListener('click', guardarCalificacionesEnLote);
+});
+
+// --- PASO 1: LÓGICA DE INICIALIZACIÓN Y FILTROS ---
+
+function inicializarSelectores() {
+  // Llenar selectores de Grado, Sección y Área
+  const grados = ['1', '2', '3', '4', '5']; // Puedes cambiar esto
+  const secciones = ['A', 'B', 'C']; // Puedes cambiar esto
+  
+  const selectGrado = document.getElementById('select-grado');
+  grados.forEach(g => selectGrado.innerHTML += `<option value="${g}">${g}</option>`);
+  
+  const selectSeccion = document.getElementById('select-seccion');
+  secciones.forEach(s => selectSeccion.innerHTML += `<option value="${s}">${s}</option>`);
+
+  google.script.run
+    .withSuccessHandler(configurarSelectAreas)
+    .obtenerTodasCompetencias();
+}
+
+function configurarSelectAreas(competencias) {
+  competenciasGlobal = competencias;
+  const areas = [...new Set(competencias.map(c => c.area))].sort();
+  const selectArea = document.getElementById('select-area');
+  areas.forEach(a => selectArea.innerHTML += `<option value="${a}">${a}</option>`);
+  selectArea.addEventListener('change', actualizarCompetencias);
+  actualizarCompetencias(); // Llama una vez para llenar las competencias iniciales
+}
+
+function actualizarCompetencias() {
+  const areaSeleccionada = document.getElementById('select-area').value;
+  const selectCompetencia = document.getElementById('select-competencia');
+  selectCompetencia.innerHTML = '';
+  const competenciasFiltradas = competenciasGlobal.filter(c => c.area === areaSeleccionada);
+  competenciasFiltradas.forEach(c => selectCompetencia.innerHTML += `<option value="${c.competencia}">${c.competencia}</option>`);
+}
+
+// --- PASO 2: LÓGICA PARA CARGAR LA TABLA DE ESTUDIANTES ---
+
+function cargarTablaEstudiantes() {
+  const grado = document.getElementById('select-grado').value;
+  const seccion = document.getElementById('select-seccion').value;
+  const container = document.getElementById('tabla-registro-container');
+  container.innerHTML = `<p class="text-center"><i class="fas fa-spinner fa-spin"></i> Cargando estudiantes...</p>`;
+  
+  google.script.run
+    .withSuccessHandler(function(estudiantes) {
+      estudiantesGlobal = estudiantes;
+      construirTabla(estudiantes);
+    })
+    .obtenerEstudiantesPorGrado(grado, seccion);
+}
+
+// Reemplaza esta función en Maestro_JavaScript.html
+
+function construirTabla(estudiantes) {
+  const container = document.getElementById('tabla-registro-container');
+  if (!estudiantes || estudiantes.length === 0) {
+    container.innerHTML = `<p class="text-center text-danger">No se encontraron estudiantes para el grado y sección seleccionados.</p>`;
+    document.getElementById('btn-guardar-lote').style.display = 'none';
+    return;
+  }
+
+  let tablaHTML = `
+    <table class="table table-bordered table-hover">
+      
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Apellidos y Nombres</th>
+          <th style="width: 150px;">Nota (0-20)</th>
+          <th>Retroalimentación (Opcional)</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  estudiantes.sort((a,b) => a.apellidos.localeCompare(b.apellidos)).forEach((est, index) => {
+    tablaHTML += `
+      <tr data-estudiante-id="${est.id}">
+        <td>${index + 1}</td>
+        <td>${est.apellidos}, ${est.nombres}</td>
+        <td><input type="number" class="form-control nota-input" min="0" max="20"></td>
+        <td><input type="text" class="form-control retro-input"></td>
+      </tr>`;
+  });
+
+  tablaHTML += `</tbody></table>`;
+  container.innerHTML = tablaHTML;
+  document.getElementById('btn-guardar-lote').style.display = 'block';
+}
+
+
+// --- PASO 3: LÓGICA PARA GUARDAR TODAS LAS NOTAS EN LOTE ---
+
+function guardarCalificacionesEnLote() {
+  const btn = document.getElementById('btn-guardar-lote');
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Guardando...`;
+
+  const datosComunes = {
+    grado: document.getElementById('select-grado').value,
+    seccion: document.getElementById('select-seccion').value,
+    area: document.getElementById('select-area').value,
+    competencia: document.getElementById('select-competencia').value,
+    periodo: document.getElementById('select-periodo').value,
+    fecha: document.getElementById('input-fecha').value
+  };
+
+  if (!datosComunes.fecha) {
+      mostrarAlerta('error', 'Por favor, seleccione una fecha de evaluación.');
+      resetBoton();
+      return;
+  }
+
+  const calificacionesArray = [];
+  const filas = document.querySelectorAll('#tabla-registro-container tbody tr');
+
+  filas.forEach(fila => {
+    const notaInput = fila.querySelector('.nota-input');
+    const nota = notaInput.value;
+    
+    // Solo procesamos las filas donde se ingresó una nota
+    if (nota && nota !== '') {
+      const estudianteId = fila.dataset.estudianteId;
+      const estudiante = estudiantesGlobal.find(e => e.id === estudianteId);
+      
+      const calificacion = {
+        ...datosComunes, // Copia todos los datos comunes
+        idEstudiante: estudiante.id,
+        apellidos: estudiante.apellidos,
+        nombres: estudiante.nombres,
+        correo: estudiante.correo,
+        calificacionNum: nota,
+        retroalimentacion: fila.querySelector('.retro-input').value
+      };
+      calificacionesArray.push(calificacion);
+    }
+  });
+
+  if (calificacionesArray.length === 0) {
+    mostrarAlerta('error', 'No se ha ingresado ninguna nota. Por favor, registre al menos una calificación.');
+    resetBoton();
+    return;
+  }
+  
+  google.script.run
+    .withSuccessHandler(function(respuesta) {
+      if (respuesta.success) {
+        mostrarAlerta('success', respuesta.mensaje);
+        // Limpiar la tabla después de guardar
+        document.getElementById('tabla-registro-container').innerHTML = `<p class="text-muted text-center">Calificaciones guardadas. Puede cargar una nueva lista.</p>`;
+        document.getElementById('btn-guardar-lote').style.display = 'none';
+      } else {
+        mostrarAlerta('error', respuesta.mensaje);
+      }
+      resetBoton();
+    })
+    .registrarCalificacionesEnLote(calificacionesArray);
+}
+
+// --- FUNCIONES AUXILIARES ---
+
+function mostrarAlerta(tipo, mensaje) {
+  const contenedor = document.getElementById('alerta-lote');
+  const clase = tipo === 'success' ? 'alert-success' : 'alert-danger';
+  contenedor.innerHTML = `<div class="alert ${clase}">${mensaje}</div>`;
+}
+
+function resetBoton() {
+  const btn = document.getElementById('btn-guardar-lote');
+  btn.disabled = false;
+  btn.innerHT
+  ML = `<i class="fas fa-save"></i> Guardar Todas las Calificaciones Registradas`;
+}
+
+// ===== CÓDIGO PARA LA PESTAÑA DE HISTORIAL CON DATATABLES (VERSIÓN FINAL) =====
+
+// Variable para guardar la tabla y evitar reinicializarla
+let historialDataTable = null;
+
+// Cuando se hace clic en la pestaña de "Ver Historial", se cargan los datos si no se han cargado antes
+$('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+  if (e.target.id === 'ver-tab' && !historialDataTable) {
+    cargarHistorial();
+  }
+});
+
+function cargarHistorial() {
+  const loader = document.getElementById('loader-historial');
+  const container = document.getElementById('tabla-historial-container');
+  loader.style.display = 'block';
+  container.style.display = 'none';
+
+  google.script.run
+    .withSuccessHandler(function(respuesta) {
+      loader.style.display = 'none';
+      container.style.display = 'block';
+      
+      if (respuesta.error) {
+        container.innerHTML = `<p class="text-danger">Error: ${respuesta.error}</p>`;
+        return;
+      }
+      
+      inicializarDataTable(respuesta);
+    })
+    .withFailureHandler(function(error) {
+      loader.style.display = 'none';
+      container.innerHTML = `<p class="text-danger">Error de comunicación: ${error.message}</p>`;
+    })
+    .obtenerTodasMisCalificaciones(); // Llamamos a la nueva función del backend
+}
+
+
+function inicializarDataTable(datos) {
+  // Destruir la tabla si ya existe para volver a cargarla
+  if ($.fn.DataTable.isDataTable('#historial-table')) {
+      $('#historial-table').DataTable().destroy();
+      $('#historial-table tbody').empty(); // Limpiar el cuerpo de la tabla
+  }
+  
+  historialDataTable = $('#historial-table').DataTable({
+    data: datos,
+    columns: [
+      { data: 'fecha' },
+      { data: 'estudiante' },
+      { data: 'grado' },
+      { data: 'seccion' },
+      { data: 'area' },
+      { data: 'competencia' },
+      { data: 'nota', className: 'text-center font-weight-bold' },
+      { data: 'periodo' }
+    ],
+    language: { // Traducción al español
+      "url": "https://cdn.datatables.net/plug-ins/1.11.5/i18n/es-ES.json"
+    },
+    responsive: true,
+    
+    // --- ESTA ES LA MAGIA PARA LOS FILTROS EN LOS ENCABEZADOS ---
+    initComplete: function () {
+      this.api().columns().every(function () {
+        var column = this;
+        // Para las columnas de Grado, Sección, Área y Periodo, creamos un <select>
+        if ([2, 3, 4, 7].includes(column.index())) { 
+          var select = $('<select class="form-control form-control-sm"><option value="">Todos</option></select>')
+            .appendTo($(column.header()))
+            .on('change', function () {
+              var val = $.fn.dataTable.util.escapeRegex($(this).val());
+              column.search(val ? '^' + val + '$' : '', true, false).draw();
+            });
+          column.data().unique().sort().each(function (d, j) {
+            select.append('<option value="' + d + '">' + d + '</option>');
+          });
+        } else { // Para las demás, creamos un <input> de texto
+           var input = $('<input type="text" class="form-control form-control-sm" placeholder="Buscar...">')
+             .appendTo($(column.header()))
+             .on('keyup change clear', function () {
+                if (column.search() !== this.value) {
+                    column.search(this.value).draw();
+                }
+            });
+        }
+      });
+    }
+  });
+}
+
+
+// --- EVENTO DEL BOTÓN DE BÚSQUEDA ---
+
+document.getElementById('btn-buscar-historial').addEventListener('click', buscarHistorial);
+
+function buscarHistorial() {
+  const container = document.getElementById('tabla-historial-container');
+  container.innerHTML = `<p class="text-center"><i class="fas fa-spinner fa-spin"></i> Buscando calificaciones...</p>`;
+
+  const filtros = {
+    grado: document.getElementById('filtro-grado').value,
+    seccion: document.getElementById('filtro-seccion').value,
+    idEstudiante: document.getElementById('filtro-estudiante').value
+  };
+
+  google.script.run
+    .withSuccessHandler(construirTablaHistorial)
+    .withFailureHandler(function(error) {
+      container.innerHTML = `<p class="text-center text-danger"><strong>Error de comunicación:</strong> No se pudo contactar al servidor. Detalle: ${error.message}</p>`;
+    })
+    .obtenerHistorialCalificaciones(filtros);
+}
+
+
+// --- FUNCIÓN PARA CONSTRUIR LA TABLA DE RESULTADOS ---
+
+function construirTablaHistorial(calificaciones) {
+  const container = document.getElementById('tabla-historial-container');
+  
+  if (calificaciones.error) {
+      container.innerHTML = `<p class="text-center text-danger">Error: ${calificaciones.error}</p>`;
+      return;
+  }
+  if (!calificaciones || calificaciones.length === 0) {
+    container.innerHTML = `<p class="text-center text-info">No se encontraron calificaciones que coincidan con los filtros.</p>`;
+    return;
+  }
+
+  let tablaHTML = `
+    <table class="table table-striped table-hover">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Estudiante</th>
+          <th>Área</th>
+          <th>Competencia</th>
+          <th>Nota</th>
+          <th>Periodo</th>
+        </tr>
+      </thead>
+      <tbody>`;
+
+  calificaciones.sort((a,b) => new Date(b.fecha) - new Date(a.fecha));
+
+  calificaciones.forEach(cal => {
+    // El backend ahora envía la fecha como 'YYYY-MM-DD'
+    // new Date() lo interpreta correctamente
+    const fecha = new Date(cal.fecha).toLocaleDateString('es-ES', { timeZone: 'UTC' });
+    tablaHTML += `
+      <tr>
+        <td>${fecha}</td>
+        <td>${cal.apellidos}, ${cal.nombres}</td>
+        <td>${cal.area}</td>
+        <td>${cal.competencia}</td>
+        <td><strong>${cal.calificacionNum}</strong></td>
+        <td>${cal.periodo}</td>
+      </tr>`;
+  });
+
+  tablaHTML += `</tbody></table>`;
+  container.innerHTML = tablaHTML;
+}
+
+
+
+</script>
