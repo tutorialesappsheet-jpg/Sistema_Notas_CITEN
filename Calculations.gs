@@ -566,3 +566,150 @@ function testCalculations() {
   
   Logger.log('\n✅ Test de Calculations completado');
 }
+
+
+// Añade esta función en Database.gs o Calculations.gs
+
+/**
+ * Procesa y agrupa las calificaciones de un estudiante para el formato de Reporte de Notas.
+ * @param {string} email - El correo del estudiante.
+ * @returns {Object} Un objeto con las calificaciones agrupadas por Área y luego por Competencia.
+ */
+function obtenerDatosParaReporte(email) {
+  const calificaciones = obtenerCalificacionesPorEstudiante(email);
+  const reporte = {};
+
+  calificaciones.forEach(cal => {
+    const area = cal.area;
+    const competencia = cal.competencia;
+
+    // Si el área no existe en nuestro objeto de reporte, la creamos.
+    if (!reporte[area]) {
+      reporte[area] = {
+        competencias: {},
+        notasArea: []
+      };
+    }
+
+    // Si la competencia no existe dentro del área, la creamos.
+    if (!reporte[area].competencias[competencia]) {
+      reporte[area].competencias[competencia] = {
+        notas: [],
+        promedio: 0
+      };
+    }
+
+    // Añadimos la nota a la competencia correspondiente.
+    reporte[area].competencias[competencia].notas.push({
+      fecha: cal.fecha,
+      notaNum: cal.calificacionNum,
+      retro: cal.retroalimentacion
+    });
+    reporte[area].notasArea.push(parseFloat(cal.calificacionNum));
+  });
+
+  // Ahora, calculamos los promedios
+  for (const area in reporte) {
+    let sumaPromediosCompetencia = 0;
+    let countCompetencias = 0;
+
+    for (const competencia in reporte[area].competencias) {
+      const comp = reporte[area].competencias[competencia];
+      const sumaNotas = comp.notas.reduce((acc, nota) => acc + parseFloat(nota.notaNum), 0);
+      comp.promedio = comp.notas.length > 0 ? (sumaNotas / comp.notas.length).toFixed(2) : 0;
+      
+      sumaPromediosCompetencia += parseFloat(comp.promedio);
+      countCompetencias++;
+    }
+
+    reporte[area].promedioArea = countCompetencias > 0 ? (sumaPromediosCompetencia / countCompetencias).toFixed(2) : 0;
+  }
+
+  return reporte;
+}
+
+// Añade estas funciones a Database.gs o Calculations.gs
+
+/**
+ * Obtiene todas las competencias pero ahora incluyendo el "Indicador".
+ */
+function obtenerTodasCompetenciasConIndicador() {
+  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(SHEETS.COMPETENCIAS);
+  const data = sheet.getDataRange().getValues();
+  const competencias = {};
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][1]) {
+      // Usamos la competencia como clave para una búsqueda rápida
+      competencias[data[i][1]] = {
+        area: data[i][0],
+        competencia: data[i][1],
+        indicador: data[i][4] || 'Otros' // Columna E para el Indicador
+      };
+    }
+  }
+  return competencias;
+}
+
+/**
+ * NUEVA FUNCIÓN PRINCIPAL para la tabla tipo SIGAN.
+ * Organiza las notas de un estudiante por Área, luego por Indicador y finalmente por Competencia.
+ */
+function obtenerDatosParaReporteSIGAN(email) {
+  const calificaciones = obtenerCalificacionesPorEstudiante(email);
+  const competenciasMap = obtenerTodasCompetenciasConIndicador();
+  const reporte = {};
+
+  // 1. Agrupar calificaciones por Área
+  const porArea = calificaciones.reduce((acc, cal) => {
+    if (!acc[cal.area]) acc[cal.area] = [];
+    acc[cal.area].push(cal);
+    return acc;
+  }, {});
+
+  // 2. Procesar cada Área
+  for (const area in porArea) {
+    const calificacionesDeArea = porArea[area];
+    const indicadores = {
+      'Indicadores de logro 1': {},
+      'Indicadores de logro 2': {},
+      'Indicadores de logro 3': {},
+      'Examen Final': {}
+    };
+
+    calificacionesDeArea.forEach(cal => {
+      const infoCompetencia = competenciasMap[cal.competencia];
+      if (infoCompetencia && indicadores[infoCompetencia.indicador]) {
+        // Agrupamos la nota dentro del indicador y competencia correctos
+        if (!indicadores[infoCompetencia.indicador][cal.competencia]) {
+          indicadores[infoCompetencia.indicador][cal.competencia] = [];
+        }
+        indicadores[infoCompetencia.indicador][cal.competencia].push(cal.calificacionNum);
+      }
+    });
+
+    // 3. Calcular promedios
+    let notasFinalesArea = [];
+    for (const indicador in indicadores) {
+      let notasIndicador = [];
+      for (const competencia in indicadores[indicador]) {
+        const notas = indicadores[indicador][competencia];
+        const promedio = notas.reduce((a, b) => a + b, 0) / notas.length;
+        indicadores[indicador][competencia] = promedio.toFixed(2);
+        notasIndicador.push(promedio);
+      }
+      // Calcular promedio del indicador
+      const promedioIndicador = notasIndicador.length > 0 ? (notasIndicador.reduce((a, b) => a + b, 0) / notasIndicador.length) : 0;
+      indicadores[indicador].promedio = promedioIndicador.toFixed(2);
+      if (promedioIndicador > 0) notasFinalesArea.push(promedioIndicador);
+    }
+    
+    const promedioFinalArea = notasFinalesArea.length > 0 ? (notasFinalesArea.reduce((a, b) => a + b, 0) / notasFinalesArea.length) : 0;
+
+    reporte[area] = {
+      indicadores: indicadores,
+      promedioFinal: promedioFinalArea.toFixed(2)
+    };
+  }
+
+  return reporte;
+}
