@@ -11,111 +11,119 @@
       --citen-dorado: #FFB81C;
     }
     body {
-      background: linear-gradient(135deg, #e8f1f8 0%, #b8d4e8 100%);
+      background: #e9ecef;
       display: flex;
       align-items: center;
       justify-content: center;
       height: 100vh;
       font-family: 'Poppins', sans-serif;
     }
-    .login-card {
+    .login-container {
       background: white;
-      padding: 40px;
-      border-radius: 20px;
-      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
-      text-align: center;
-      max-width: 450px;
-      width: 90%;
-      border-top: 8px solid var(--citen-azul-oscuro);
+      box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+      display: flex;
+      max-width: 900px;
+      width: 100%;
+      border-radius: 10px;
+      overflow: hidden;
     }
-    .login-card img {
-      height: 80px;
+    .login-sidebar {
+      background: var(--citen-azul-oscuro);
+      color: white;
+      padding: 40px;
+      width: 40%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .login-sidebar img {
+      height: 120px;
       margin-bottom: 20px;
     }
-    .login-card h2 {
+    .login-form-container {
+      padding: 40px;
+      width: 60%;
+    }
+    .login-form-container h2 {
       color: var(--citen-azul-oscuro);
       font-weight: 700;
-      margin-bottom: 15px;
+      margin-bottom: 20px;
     }
-    .login-card p {
-      color: #555;
-      margin-bottom: 25px;
-    }
-    .user-info {
-      background: #f8f9fa;
-      border: 1px solid #e1e8ed;
-      border-radius: 10px;
-      padding: 15px;
-      margin-bottom: 25px;
-      font-size: 0.9em;
-    }
-    .user-info strong {
-      word-break: break-all;
-    }
-    .btn-google {
-      background-color: #4285F4;
-      color: white;
+    .form-control { min-height: 50px; border-radius: 8px; }
+    .btn-login {
+      background-color: var(--citen-dorado);
+      border-color: var(--citen-dorado);
+      color: var(--citen-azul-oscuro);
       font-weight: 600;
-      width: 100%;
       padding: 12px;
-      border-radius: 10px;
-      transition: all 0.3s ease;
-    }
-    .btn-google:hover {
-      background-color: #357ae8;
-      color: white;
-    }
-    .switch-account {
-      margin-top: 15px;
-      font-size: 0.9em;
+      border-radius: 8px;
     }
   </style>
 </head>
 <body>
-
-  <div class="login-card">
-    <img src="https://citen.edu.pe/wp-content/uploads/2023/05/ESCUDO-CITEN-1.png" alt="Logo CITEN">
-    <h2>Acceso al Portal del Estudiante</h2>
-    <p>Tu cuenta de Google no se encuentra registrada en nuestro sistema.</p>
-    
-    <div id="user-info-container" class="user-info" style="display: none;">
-      Estás intentando acceder con la cuenta:
-      <strong id="user-email">Cargando...</strong>
+  <div class="login-container">
+    <div class="login-sidebar">
+      <img src="https://citen.edu.pe/wp-content/uploads/2023/05/ESCUDO-CITEN-1.png" alt="Logo CITEN">
+      <h3 class="font-weight-bold">INSTITUTO DE EDUCACIÓN SUPERIOR TECNOLÓGICO PÚBLICO NAVAL - CITEN</h3>
     </div>
-
-    <button id="login-button" class="btn btn-google">
-      <i class="fab fa-google"></i> Iniciar Sesión con Google
-    </button>
-    <div class="switch-account">
-      <a href="https://accounts.google.com/logout" target="_blank">¿No es tu cuenta? Cambiar de cuenta aquí.</a>
+    <div class="login-form-container">
+      <h2>INGRESO AL SISTEMA</h2>
+      <p class="text-muted">Ingrese su Usuario y Contraseña.</p>
+      
+      <form id="login-form">
+        <div class="form-group">
+          <label for="email">Usuario (Correo Electrónico)</label>
+          <input type="email" class="form-control" id="email" placeholder="ejemplo@email.com" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Contraseña (ID / DNI)</label>
+          <input type="password" class="form-control" id="password" placeholder="Tu ID o DNI" required>
+        </div>
+        
+        <div id="error-message" class="alert alert-danger" style="display: none;"></div>
+        
+        <button type="submit" id="login-button" class="btn btn-login btn-block">
+          Iniciar Sesión
+        </button>
+      </form>
     </div>
   </div>
 
   <script>
-    document.addEventListener("DOMContentLoaded", function() {
-      const emailElement = document.getElementById('user-email');
-      const userInfoContainer = document.getElementById('user-info-container');
-      const loginButton = document.getElementById('login-button');
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const button = document.getElementById('login-button');
+      const errorMessage = document.getElementById('error-message');
+      
+      button.disabled = true;
+      button.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Verificando...';
+      errorMessage.style.display = 'none';
 
-      // Pide al servidor el email del usuario actual
       google.script.run
-        .withSuccessHandler(function(data) {
-          if (data.email) {
-            emailElement.textContent = data.email;
-            userInfoContainer.style.display = 'block';
+        .withSuccessHandler(function(response) {
+          if (response.success) {
+            // Si el login es exitoso, redirigimos a la misma URL pero añadiendo el token.
+            const url = "<?= ScriptApp.getService().getUrl() ?>";
+            window.top.location.href = url + '?token=' + response.token;
           } else {
-            emailElement.textContent = "No se pudo detectar una cuenta de Google.";
+            errorMessage.textContent = response.message;
+            errorMessage.style.display = 'block';
+            button.disabled = false;
+            button.innerHTML = 'Iniciar Sesión';
           }
-          // El botón de login simplemente recarga la página para que Google re-autentique
-          loginButton.onclick = function() {
-            window.top.location.href = data.appUrl;
-          };
         })
         .withFailureHandler(function(error) {
-           emailElement.textContent = "Error al contactar al servidor.";
-           console.error(error);
+          errorMessage.textContent = "Error de conexión con el servidor: " + error.message;
+          errorMessage.style.display = 'block';
+          button.disabled = false;
+          button.innerHTML = 'Iniciar Sesión';
         })
-        .getLoginInfo();
+        .verificarCredenciales(email, password);
     });
   </script>
 
